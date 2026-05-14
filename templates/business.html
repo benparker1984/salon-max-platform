@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <div class="row" style="justify-content:space-between;">
+        <div>
+            <h2>{{ business.name }}</h2>
+            <p class="muted">Account ID: {{ business.public_id }}</p>
+        </div>
+        <div class="row">
+            <span class="tag {% if business.status == 'suspended' %}warn{% endif %}">{{ business.status|title }}</span>
+            <span class="tag {% if business.subscription_status == 'suspended' %}warn{% endif %}">{{ business.subscription_status|title }}</span>
+        </div>
+    </div>
+</section>
+
+<section class="grid two">
+    <div class="panel">
+        <h2>Terminal Onboarding Pack</h2>
+        <p class="muted">Use this code when pairing a salon Pi/till to this business.</p>
+        <div class="metric">{{ business.pairing_code }}</div>
+        <form method="post" action="{{ url_for('regenerate_pairing_code', public_id=business.public_id) }}" style="margin-top:14px;">
+            <button type="submit">Generate New Pairing Code</button>
+        </form>
+    </div>
+    <div class="panel">
+        <h2>Provider Notes</h2>
+        <p class="muted">This is your Salon Max owner-side record for the business. It is separate from the salon's local trading data.</p>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Business Details</h2>
+    <form method="post" action="{{ url_for('update_business', public_id=business.public_id) }}" class="grid three">
+        <div>
+            <label>Business name</label>
+            <input name="name" value="{{ business.name }}" required>
+        </div>
+        <div>
+            <label>Plan</label>
+            <select name="plan">
+                {% for option in ["pilot", "standard", "premium"] %}
+                <option value="{{ option }}" {% if business.plan == option %}selected{% endif %}>{{ option|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Account status</label>
+            <select name="status">
+                {% for option in ["active", "suspended"] %}
+                <option value="{{ option }}" {% if business.status == option %}selected{% endif %}>{{ option|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Subscription</label>
+            <select name="subscription_status">
+                {% for option in ["active", "trial", "suspended", "cancelled"] %}
+                <option value="{{ option }}" {% if business.subscription_status == option %}selected{% endif %}>{{ option|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Contact name</label>
+            <input name="contact_name" value="{{ business.contact_name }}">
+        </div>
+        <div>
+            <label>Contact email</label>
+            <input name="contact_email" value="{{ business.contact_email }}" type="email">
+        </div>
+        <div>
+            <label>Contact phone</label>
+            <input name="contact_phone" value="{{ business.contact_phone }}">
+        </div>
+        <div>
+            <label>Address line 1</label>
+            <input name="address_line_1" value="{{ business.address_line_1 }}">
+        </div>
+        <div>
+            <label>Address line 2</label>
+            <input name="address_line_2" value="{{ business.address_line_2 }}">
+        </div>
+        <div>
+            <label>Town</label>
+            <input name="town" value="{{ business.town }}">
+        </div>
+        <div>
+            <label>Postcode</label>
+            <input name="postcode" value="{{ business.postcode }}">
+        </div>
+        <div style="grid-column:1/-1;">
+            <label>Notes</label>
+            <textarea name="notes">{{ business.notes }}</textarea>
+        </div>
+        <div>
+            <button type="submit">Save Business Details</button>
+        </div>
+    </form>
+    <form method="post" action="{{ url_for('archive_business', public_id=business.public_id) }}" style="margin-top:14px;">
+        <button type="submit">Archive Business</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Add Site</h2>
+    <p class="muted">A business can have one salon site or many salon branches.</p>
+    <form method="post" action="{{ url_for('create_site', public_id=business.public_id) }}" class="grid three">
+        <div>
+            <label>Site name</label>
+            <input name="name" placeholder="Example: Liverpool" required>
+        </div>
+        <div>
+            <label>Site code</label>
+            <input name="code" placeholder="Optional">
+        </div>
+        <div>
+            <label>Status</label>
+            <select name="status">
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+            </select>
+        </div>
+        <div>
+            <label>Address line 1</label>
+            <input name="address_line_1">
+        </div>
+        <div>
+            <label>Town</label>
+            <input name="town">
+        </div>
+        <div>
+            <label>Postcode</label>
+            <input name="postcode">
+        </div>
+        <div style="grid-column:1/-1;">
+            <label>Notes</label>
+            <textarea name="notes"></textarea>
+        </div>
+        <div>
+            <button type="submit">Add Site</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Sites</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Site</th>
+                <th>Code</th>
+                <th>Status</th>
+                <th>Address</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for site in sites %}
+            <tr>
+                <td>
+                    <form id="site-{{ site.id }}" method="post" action="{{ url_for('update_site', public_id=business.public_id, site_id=site.id) }}">
+                        <input name="name" value="{{ site.name }}">
+                </td>
+                <td><input form="site-{{ site.id }}" name="code" value="{{ site.code }}"></td>
+                <td>
+                    {% if site.archived_at %}
+                    <span class="tag neutral">Archived</span>
+                    {% else %}
+                    <select form="site-{{ site.id }}" name="status">
+                        {% for option in ["active", "suspended"] %}
+                        <option value="{{ option }}" {% if site.status == option %}selected{% endif %}>{{ option|title }}</option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                </td>
+                <td>
+                    <input form="site-{{ site.id }}" name="address_line_1" value="{{ site.address_line_1 }}" placeholder="Address line 1">
+                    <input form="site-{{ site.id }}" name="address_line_2" value="{{ site.address_line_2 }}" placeholder="Address line 2" style="margin-top:8px;">
+                    <input form="site-{{ site.id }}" name="town" value="{{ site.town }}" placeholder="Town" style="margin-top:8px;">
+                    <input form="site-{{ site.id }}" name="postcode" value="{{ site.postcode }}" placeholder="Postcode" style="margin-top:8px;">
+                    <textarea form="site-{{ site.id }}" name="notes" placeholder="Notes" style="margin-top:8px;">{{ site.notes }}</textarea>
+                </td>
+                <td>
+                    {% if site.archived_at %}
+                    </form>
+                    <form method="post" action="{{ url_for('restore_site', public_id=business.public_id, site_id=site.id) }}">
+                        <button type="submit">Restore Site</button>
+                    </form>
+                    {% else %}
+                    <button form="site-{{ site.id }}" type="submit">Save Site</button>
+                    </form>
+                    <form method="post" action="{{ url_for('archive_site', public_id=business.public_id, site_id=site.id) }}" style="margin-top:8px;">
+                        <button type="submit">Archive Site</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="muted">No sites added yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Terminals</h2>
+    <p class="muted">Terminal pairing/sync will be rebuilt next. This section is reserved so the platform shape is ready.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Terminal</th>
+                <th>Status</th>
+                <th>Last Seen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for terminal in terminals %}
+            <tr>
+                <td>{{ terminal.terminal_name }}</td>
+                <td>{{ terminal.status }}</td>
+                <td>{{ terminal.last_seen_at or "Never" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="muted">No terminals paired yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

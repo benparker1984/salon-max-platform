@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid cards">
+    <div class="panel">
+        <div class="muted">Live Businesses</div>
+        <div class="metric">{{ businesses|length }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Archived Businesses</div>
+        <div class="metric">{{ archived|length }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Platform</div>
+        <div class="metric">Cloud</div>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Add New Salon Business</h2>
+    <p class="muted">Create the salon company first, then open it to add sites and onboarding details.</p>
+    <form method="post" action="{{ url_for('create_business') }}" class="grid three">
+        <div>
+            <label>Business name</label>
+            <input name="name" placeholder="Example: Ultra Violet Liverpool" required>
+        </div>
+        <div>
+            <label>Contact name</label>
+            <input name="contact_name" placeholder="Owner or manager">
+        </div>
+        <div>
+            <label>Contact email</label>
+            <input name="contact_email" type="email" placeholder="owner@example.com">
+        </div>
+        <div>
+            <label>Phone</label>
+            <input name="contact_phone">
+        </div>
+        <div>
+            <label>Town</label>
+            <input name="town">
+        </div>
+        <div>
+            <label>Postcode</label>
+            <input name="postcode">
+        </div>
+        <div>
+            <label>Plan</label>
+            <select name="plan">
+                <option value="standard">Standard</option>
+                <option value="pilot">Pilot</option>
+                <option value="premium">Premium</option>
+            </select>
+        </div>
+        <div>
+            <label>Subscription</label>
+            <select name="subscription_status">
+                <option value="active">Active</option>
+                <option value="trial">Trial</option>
+                <option value="suspended">Suspended</option>
+            </select>
+        </div>
+        <div style="align-self:end;">
+            <button type="submit">Create Business</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Business Account Directory</h2>
+    <form class="row" method="get" action="{{ url_for('platform_owner') }}">
+        <div style="flex:1; min-width:260px;">
+            <label>Search businesses</label>
+            <input name="search" value="{{ search }}" placeholder="Name, account id, contact, email, phone, town, postcode">
+        </div>
+        <div style="align-self:end;">
+            <button type="submit">Search</button>
+        </div>
+        {% if search %}
+        <div style="align-self:end;">
+            <a class="button secondary" href="{{ url_for('platform_owner') }}">Clear</a>
+        </div>
+        {% endif %}
+    </form>
+    <table>
+        <thead>
+            <tr>
+                <th>Business</th>
+                <th>Account ID</th>
+                <th>Account</th>
+                <th>Subscription</th>
+                <th>Sites</th>
+                <th>Terminals</th>
+                <th>Contact</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for business in businesses %}
+            <tr>
+                <td><strong>{{ business.name }}</strong></td>
+                <td>{{ business.public_id }}</td>
+                <td><span class="tag {% if business.status == 'suspended' %}warn{% endif %}">{{ business.status|title }}</span></td>
+                <td><span class="tag {% if business.subscription_status == 'suspended' %}warn{% endif %}">{{ business.subscription_status|title }}</span></td>
+                <td>{{ business.site_count }}</td>
+                <td>{{ business.terminal_count }}</td>
+                <td>
+                    {{ business.contact_name }}<br>
+                    <span class="muted">{{ business.contact_email }}</span>
+                </td>
+                <td><a href="{{ url_for('business_detail', public_id=business.public_id) }}">Open</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="muted">No live businesses yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Archived Businesses</h2>
+    <p class="muted">Archived businesses are hidden from the live directory but kept here for restore.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Business</th>
+                <th>Account ID</th>
+                <th>Sites</th>
+                <th>Restore</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for business in archived %}
+            <tr>
+                <td><strong>{{ business.name }}</strong></td>
+                <td>{{ business.public_id }}</td>
+                <td>{{ business.site_count }}</td>
+                <td>
+                    <form class="compact-form" method="post" action="{{ url_for('restore_business', public_id=business.public_id) }}">
+                        <button type="submit">Restore Business</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted">No archived businesses.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
