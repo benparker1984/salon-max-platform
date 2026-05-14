@@ -1,0 +1,1 @@
+# salon-max-platform
