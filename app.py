@@ -164,6 +164,7 @@ def init_db() -> None:
         """
     )
     ensure_column("terminals", "app_version", "text not null default ''")
+    ensure_column("terminals", "target_app_version", "text not null default ''")
     ensure_column("terminals", "last_lease_status", "text not null default ''")
     ensure_column("terminals", "last_access_message", "text not null default ''")
 
@@ -364,6 +365,10 @@ def api_device_config(terminal_device_id: str):
         return json_error("BUSINESS_NOT_FOUND", "Business account was not found.", status=404)
     site = query_one("select * from sites where id = ?", (terminal["site_id"],)) if terminal["site_id"] else None
     licence_status, access_message = business_access_state(business)
+    execute(
+        "update terminals set last_seen_at = ?, updated_at = ? where device_public_id = ?",
+        (now_utc(), now_utc(), terminal_device_id),
+    )
     return jsonify(
         {
             "ok": True,
@@ -376,6 +381,7 @@ def api_device_config(terminal_device_id: str):
                 "terminal_device_id": terminal_device_id,
                 "licence_status": licence_status,
                 "access_message": access_message,
+                "target_app_version": terminal["target_app_version"],
             },
         }
     )
@@ -513,6 +519,133 @@ def business_detail(public_id: str):
         "business.html",
         business=business,
         sites=sites,
+        terminals=terminal_rows,
+        notice=request.args.get("notice", "").strip(),
+    )
+
+
+def terminal_rows_with_business(where: str = "", params: tuple = ()):
+    sql = f"""
+        select
+            terminals.*,
+            businesses.name as business_name,
+            businesses.status as business_status,
+            businesses.subscription_status as subscription_status,
+            sites.name as site_name,
+            sites.status as site_status
+        from terminals
+        join businesses on businesses.public_id = terminals.business_public_id
+        left join sites on sites.id = terminals.site_id
+        {where}
+        order by businesses.name, terminals.terminal_name
+    """
+    rows = []
+    for row in query_all(sql, params):
+        item = dict(row)
+        item["health"] = terminal_health(row)
+        rows.append(item)
+    return rows
+
+
+def platform_counts():
+    return {
+        "businesses": query_one("select count(*) as value from businesses where archived_at is null")["value"],
+        "archived_businesses": query_one("select count(*) as value from businesses where archived_at is not null")["value"],
+        "terminals": query_one("select count(*) as value from terminals")["value"],
+        "active_terminals": query_one("select count(*) as value from terminals where last_seen_at is not null")["value"],
+        "suspended_businesses": query_one(
+            "select count(*) as value from businesses where status = 'suspended' or subscription_status in ('suspended', 'cancelled')"
+        )["value"],
+    }
+
+
+@app.route("/platform/licences")
+def platform_licences():
+    business_filter = request.args.get("business", "").strip()
+    where = ""
+    params: tuple = ()
+    if business_filter:
+        where = "where businesses.public_id = ?"
+        params = (business_filter,)
+    return render_template(
+        "licences.html",
+        title="Salon Max Licences",
+        counts=platform_counts(),
+        businesses=query_all("select public_id, name from businesses where archived_at is null order by name"),
+        terminals=terminal_rows_with_business(where, params),
+        selected_business=business_filter,
+        notice=request.args.get("notice", "").strip(),
+    )
+
+
+@app.route("/platform/diagnostics")
+def platform_diagnostics():
+    terminals = terminal_rows_with_business()
+    stale = [terminal for terminal in terminals if terminal["health"]["status"] == "stale"]
+    locked = [
+        terminal for terminal in terminals
+        if terminal["business_status"] == "suspended"
+        or terminal["subscription_status"] in {"suspended", "cancelled"}
+        or terminal["last_lease_status"] in {"suspended", "cancelled", "archived"}
+    ]
+    return render_template(
+        "diagnostics.html",
+        title="Salon Max Diagnostics",
+        counts=platform_counts(),
+        terminals=terminals,
+        stale=stale,
+        locked=locked,
+        notice=request.args.get("notice", "").strip(),
+    )
+
+
+@app.route("/platform/updates")
+def platform_updates():
+    return render_template(
+        "updates.html",
+        title="Salon Max Updates",
+        counts=platform_counts(),
+        terminals=terminal_rows_with_business(),
+        notice=request.args.get("notice", "").strip(),
+    )
+
+
+@app.post("/platform/updates/terminal/<int:terminal_id>/target")
+def set_terminal_target_version(terminal_id: int):
+    target = request.form.get("target_app_version", "").strip()
+    execute("update terminals set target_app_version = ?, updated_at = ? where id = ?", (target, now_utc(), terminal_id))
+    return redirect(url_for("platform_updates", notice="Target app version saved."))
+
+
+@app.route("/platform/queries")
+def platform_queries():
+    search = request.args.get("search", "").strip()
+    business_rows = []
+    terminal_rows = []
+    if search:
+        like = f"%{search}%"
+        business_rows = query_all(
+            """
+            select * from businesses
+            where name like ? or public_id like ? or contact_name like ? or contact_email like ? or contact_phone like ?
+            order by updated_at desc
+            """,
+            (like, like, like, like, like),
+        )
+        terminal_rows = terminal_rows_with_business(
+            """
+            where terminals.terminal_name like ?
+               or terminals.device_public_id like ?
+               or businesses.name like ?
+               or businesses.public_id like ?
+            """,
+            (like, like, like, like),
+        )
+    return render_template(
+        "queries.html",
+        title="Salon Max Queries",
+        search=search,
+        businesses=business_rows,
         terminals=terminal_rows,
         notice=request.args.get("notice", "").strip(),
     )

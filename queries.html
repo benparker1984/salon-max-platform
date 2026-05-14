@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <h2>Support Queries</h2>
+    <p class="muted">Quick lookup for a business, contact, account id, terminal name, or device id.</p>
+    <form class="row" method="get" action="{{ url_for('platform_queries') }}">
+        <div style="flex:1; min-width:280px;">
+            <label>Search</label>
+            <input name="search" value="{{ search }}" placeholder="Business, contact, email, terminal, device id">
+        </div>
+        <div style="align-self:end;"><button type="submit">Search</button></div>
+    </form>
+</section>
+
+{% if search %}
+<section class="panel">
+    <h2>Business Results</h2>
+    <table>
+        <thead><tr><th>Business</th><th>Account</th><th>Contact</th><th>Status</th><th>Open</th></tr></thead>
+        <tbody>
+            {% for business in businesses %}
+            <tr>
+                <td>{{ business.name }}</td>
+                <td>{{ business.public_id }}</td>
+                <td>{{ business.contact_name }}<br><span class="muted">{{ business.contact_email }} {{ business.contact_phone }}</span></td>
+                <td><span class="tag {% if business.status == 'suspended' %}warn{% endif %}">{{ business.status }}</span></td>
+                <td><a href="{{ url_for('business_detail', public_id=business.public_id) }}">Open</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="muted">No business matches.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Terminal Results</h2>
+    <table>
+        <thead><tr><th>Business</th><th>Terminal</th><th>Device</th><th>Health</th><th>Last Seen</th></tr></thead>
+        <tbody>
+            {% for terminal in terminals %}
+            <tr>
+                <td>{{ terminal.business_name }}</td>
+                <td>{{ terminal.terminal_name }}</td>
+                <td>{{ terminal.device_public_id }}</td>
+                <td><span class="tag {% if terminal.health.status == 'active' %}{% elif terminal.health.status == 'stale' %}warn{% else %}neutral{% endif %}">{{ terminal.health.label }}</span></td>
+                <td>{{ terminal.last_seen_at or "Never" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="muted">No terminal matches.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+{% endblock %}
