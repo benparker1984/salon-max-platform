@@ -4,10 +4,10 @@ import os
 import re
 import secrets
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Flask, g, redirect, render_template, request, session, url_for
+from flask import Flask, g, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -20,6 +20,19 @@ app.secret_key = os.environ.get("SALONMAX_SECRET_KEY", "change-this-before-live"
 
 def now_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_utc(value: str | None):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def iso_utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def slugify(value: str, fallback: str = "business") -> str:
@@ -39,6 +52,18 @@ def make_business_id(name: str) -> str:
 
 def make_site_code(name: str) -> str:
     return slugify(name, "site")[:24]
+
+
+def terminal_health(row) -> dict:
+    last_seen = parse_utc(row["last_seen_at"])
+    if row["status"] == "paired" and last_seen:
+        age = datetime.now(timezone.utc) - last_seen
+        if age <= timedelta(minutes=2):
+            return {"status": "active", "label": "Active"}
+        return {"status": "stale", "label": "Check-In Stale"}
+    if row["status"] == "paired":
+        return {"status": "stale", "label": "Paired, No Check-In"}
+    return {"status": "neutral", "label": row["status"].replace("_", " ").title()}
 
 
 def db() -> sqlite3.Connection:
@@ -95,6 +120,15 @@ def init_db() -> None:
         )
         """
     )
+    ensure_column("terminals", "app_version", "text not null default ''")
+    ensure_column("terminals", "last_lease_status", "text not null default ''")
+    ensure_column("terminals", "last_access_message", "text not null default ''")
+
+
+def ensure_column(table: str, column: str, ddl: str) -> None:
+    existing = {row["name"] for row in query_all(f"pragma table_info({table})")}
+    if column not in existing:
+        execute(f"alter table {table} add column {column} {ddl}")
     execute(
         """
         create table if not exists sites (
@@ -137,7 +171,7 @@ def init_db() -> None:
 @app.before_request
 def before_request():
     init_db()
-    if request.path in {"/healthz", "/platform-login"} or request.path.startswith("/static/"):
+    if request.path in {"/healthz", "/platform-login"} or request.path.startswith("/static/") or request.path.startswith("/v1/"):
         return None
     if not session.get("salonmax_platform_authed"):
         return redirect(url_for("platform_login", next=request.full_path.rstrip("?")))
@@ -147,6 +181,204 @@ def before_request():
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "product": "salon-max-platform"}
+
+
+def json_error(code: str, message: str, status: int = 400):
+    return jsonify({"ok": False, "error": {"code": code, "message": message}}), status
+
+
+def request_json() -> dict:
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
+
+
+def business_access_state(business) -> tuple[str, str]:
+    if business["archived_at"]:
+        return "archived", "This business is archived and trading is locked."
+    if business["status"] == "suspended":
+        return "suspended", "This business is suspended and trading is locked."
+    if business["subscription_status"] in {"suspended", "cancelled"}:
+        return business["subscription_status"], "This subscription is not active and trading is locked."
+    return "active", "Trading enabled."
+
+
+@app.post("/v1/pairing/claim")
+def api_pairing_claim():
+    payload = request_json()
+    pairing_code = str(payload.get("pairing_code") or payload.get("code") or "").strip().upper()
+    terminal_device_id = str(payload.get("terminal_device_id") or payload.get("device_id") or "").strip()
+    terminal_name = str(payload.get("terminal_name") or terminal_device_id or "Salon Till").strip()
+    site_code = str(payload.get("site_code") or "").strip()
+    if not pairing_code:
+        return json_error("PAIRING_CODE_REQUIRED", "Pairing code is required.")
+    if not terminal_device_id:
+        return json_error("TERMINAL_DEVICE_ID_REQUIRED", "Terminal device id is required.")
+
+    business = query_one(
+        "select * from businesses where pairing_code = ? and archived_at is null",
+        (pairing_code,),
+    )
+    if business is None:
+        return json_error("PAIRING_CODE_NOT_FOUND", "Pairing code was not found.", status=404)
+
+    site = None
+    if site_code:
+        site = query_one(
+            "select * from sites where business_public_id = ? and code = ? and archived_at is null",
+            (business["public_id"], site_code),
+        )
+    if site is None:
+        site = query_one(
+            "select * from sites where business_public_id = ? and archived_at is null order by id limit 1",
+            (business["public_id"],),
+        )
+
+    timestamp = now_utc()
+    existing = query_one(
+        "select * from terminals where device_public_id = ?",
+        (terminal_device_id,),
+    )
+    if existing:
+        execute(
+            """
+            update terminals
+            set business_public_id = ?, site_id = ?, terminal_name = ?, status = 'paired',
+                last_seen_at = ?, updated_at = ?
+            where id = ?
+            """,
+            (business["public_id"], site["id"] if site else None, terminal_name, timestamp, timestamp, existing["id"]),
+        )
+    else:
+        execute(
+            """
+            insert into terminals (
+                business_public_id, site_id, terminal_name, device_public_id, status,
+                last_seen_at, created_at, updated_at
+            ) values (?, ?, ?, ?, 'paired', ?, ?, ?)
+            """,
+            (business["public_id"], site["id"] if site else None, terminal_name, terminal_device_id, timestamp, timestamp, timestamp),
+        )
+
+    licence_status, access_message = business_access_state(business)
+    return jsonify(
+        {
+            "ok": True,
+            "data": {
+                "business_account_public_id": business["public_id"],
+                "business_name": business["name"],
+                "site_id": site["id"] if site else None,
+                "site_code": site["code"] if site else "",
+                "site_name": site["name"] if site else "",
+                "terminal_device_id": terminal_device_id,
+                "licence_status": licence_status,
+                "access_message": access_message,
+            },
+        }
+    )
+
+
+@app.post("/v1/licence/check-in")
+def api_licence_check_in():
+    payload = request_json()
+    business_public_id = (
+        request.headers.get("X-SalonMax-Business-Id")
+        or payload.get("business_account_public_id")
+        or payload.get("business_id")
+        or ""
+    )
+    terminal_device_id = (
+        request.headers.get("X-SalonMax-Device-Id")
+        or payload.get("terminal_device_id")
+        or payload.get("device_id")
+        or ""
+    )
+    business_public_id = str(business_public_id).strip()
+    terminal_device_id = str(terminal_device_id).strip()
+    app_version = str(payload.get("app_version") or "").strip()
+    if not business_public_id:
+        return json_error("BUSINESS_ID_REQUIRED", "Business id is required.")
+    if not terminal_device_id:
+        return json_error("TERMINAL_DEVICE_ID_REQUIRED", "Terminal device id is required.")
+
+    business = query_one("select * from businesses where public_id = ?", (business_public_id,))
+    if business is None:
+        return json_error("BUSINESS_NOT_FOUND", "Business account was not found.", status=404)
+
+    timestamp = now_utc()
+    terminal = query_one("select * from terminals where device_public_id = ?", (terminal_device_id,))
+    if terminal is None:
+        execute(
+            """
+            insert into terminals (
+                business_public_id, terminal_name, device_public_id, status,
+                last_seen_at, app_version, created_at, updated_at
+            ) values (?, ?, ?, 'paired', ?, ?, ?, ?)
+            """,
+            (business_public_id, terminal_device_id, terminal_device_id, timestamp, app_version, timestamp, timestamp),
+        )
+    else:
+        execute(
+            """
+            update terminals
+            set business_public_id = ?, status = 'paired', last_seen_at = ?,
+                app_version = ?, updated_at = ?
+            where id = ?
+            """,
+            (business_public_id, timestamp, app_version, timestamp, terminal["id"]),
+        )
+
+    licence_status, access_message = business_access_state(business)
+    issued_at = datetime.now(timezone.utc)
+    expires_at = issued_at + timedelta(days=30)
+    grace_ends_at = issued_at + timedelta(days=37)
+    execute(
+        """
+        update terminals
+        set last_lease_status = ?, last_access_message = ?, updated_at = ?
+        where device_public_id = ?
+        """,
+        (licence_status, access_message, timestamp, terminal_device_id),
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "data": {
+                "licence_status": licence_status,
+                "access_message": access_message,
+                "issued_at": iso_utc(issued_at),
+                "expires_at": iso_utc(expires_at),
+                "grace_ends_at": iso_utc(grace_ends_at),
+                "signed_token": f"sm-lease:{terminal_device_id}:{iso_utc(issued_at)}",
+            },
+        }
+    )
+
+
+@app.get("/v1/devices/<terminal_device_id>/config")
+def api_device_config(terminal_device_id: str):
+    terminal = query_one("select * from terminals where device_public_id = ?", (terminal_device_id,))
+    if terminal is None:
+        return json_error("TERMINAL_NOT_FOUND", "Terminal has not been paired.", status=404)
+    business = query_one("select * from businesses where public_id = ?", (terminal["business_public_id"],))
+    if business is None:
+        return json_error("BUSINESS_NOT_FOUND", "Business account was not found.", status=404)
+    site = query_one("select * from sites where id = ?", (terminal["site_id"],)) if terminal["site_id"] else None
+    licence_status, access_message = business_access_state(business)
+    return jsonify(
+        {
+            "ok": True,
+            "data": {
+                "business_account_public_id": business["public_id"],
+                "business_name": business["name"],
+                "site_id": site["id"] if site else None,
+                "site_code": site["code"] if site else "",
+                "site_name": site["name"] if site else "",
+                "terminal_device_id": terminal_device_id,
+                "licence_status": licence_status,
+                "access_message": access_message,
+            },
+        }
+    )
 
 
 @app.route("/")
@@ -272,11 +504,16 @@ def business_detail(public_id: str):
         "select * from terminals where business_public_id = ? order by id",
         (public_id,),
     )
+    terminal_rows = []
+    for terminal in terminals:
+        item = dict(terminal)
+        item["health"] = terminal_health(terminal)
+        terminal_rows.append(item)
     return render_template(
         "business.html",
         business=business,
         sites=sites,
-        terminals=terminals,
+        terminals=terminal_rows,
         notice=request.args.get("notice", "").strip(),
     )
 
