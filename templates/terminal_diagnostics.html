@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid two">
+    <div class="panel">
+        <h2>{{ terminal.terminal_name }}</h2>
+        <p class="muted">{{ terminal.business_name }}{% if terminal.site_name %} / {{ terminal.site_name }}{% endif %}</p>
+        <div class="row">
+            <span class="tag {% if terminal.health.status == 'active' %}{% elif terminal.health.status == 'stale' %}warn{% else %}neutral{% endif %}">{{ terminal.health.label }}</span>
+            <span class="tag {% if terminal.last_lease_status == 'active' %}{% elif terminal.last_lease_status %}warn{% else %}neutral{% endif %}">{{ terminal.last_lease_status or "No Lease" }}</span>
+        </div>
+    </div>
+    <div class="panel">
+        <h2>Check-In</h2>
+        <p class="muted">Device ID: {{ terminal.device_public_id or "Not paired yet" }}</p>
+        <p>Last seen: <strong>{{ terminal.last_seen_at or "Never" }}</strong></p>
+        <p>Reported app: <strong>{{ terminal.app_version or "Unknown" }}</strong></p>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Terminal Support Controls</h2>
+    <form method="post" action="{{ url_for('update_terminal', terminal_id=terminal.id) }}" class="grid three">
+        <div>
+            <label>Terminal name</label>
+            <input name="terminal_name" value="{{ terminal.terminal_name }}">
+        </div>
+        <div>
+            <label>Status</label>
+            <select name="status">
+                {% for option in ["awaiting_pairing", "paired", "suspended", "retired"] %}
+                <option value="{{ option }}" {% if terminal.status == option %}selected{% endif %}>{{ option.replace("_", " ")|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label>Target app version</label>
+            <input name="target_app_version" value="{{ terminal.target_app_version }}" placeholder="Example: native-till-1.0.1">
+        </div>
+        <div style="grid-column:1/-1;">
+            <label>Support notes</label>
+            <textarea name="support_notes">{{ terminal.support_notes }}</textarea>
+        </div>
+        <div><button type="submit">Save Terminal</button></div>
+    </form>
+    <div class="row" style="margin-top:14px;">
+        <form method="post" action="{{ url_for('suspend_terminal', terminal_id=terminal.id) }}"><button type="submit">Suspend Terminal</button></form>
+        <form method="post" action="{{ url_for('reactivate_terminal', terminal_id=terminal.id) }}"><button type="submit">Reactivate Terminal</button></form>
+        <form method="post" action="{{ url_for('retire_terminal', terminal_id=terminal.id) }}"><button type="submit">Retire Terminal</button></form>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Latest Licence Message</h2>
+    <p class="muted">{{ terminal.last_access_message or "No licence check-in message has been received yet." }}</p>
+</section>
+{% endblock %}

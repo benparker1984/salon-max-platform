@@ -203,24 +203,39 @@
 
 <section class="panel">
     <h2>Terminals</h2>
-    <p class="muted">Terminal pairing/sync will be rebuilt next. This section is reserved so the platform shape is ready.</p>
+    <p class="muted">Paired salon tills and Pi devices report here when they claim a pairing code or check in for licence status.</p>
     <table>
         <thead>
             <tr>
                 <th>Terminal</th>
+                <th>Device ID</th>
                 <th>Status</th>
+                <th>Licence</th>
+                <th>App Version</th>
                 <th>Last Seen</th>
+                <th>Diagnostics</th>
             </tr>
         </thead>
         <tbody>
             {% for terminal in terminals %}
             <tr>
                 <td>{{ terminal.terminal_name }}</td>
-                <td>{{ terminal.status }}</td>
+                <td>{{ terminal.device_public_id }}</td>
+                <td><span class="tag {% if terminal.health.status == 'stale' %}warn{% elif terminal.health.status == 'active' %}{% else %}neutral{% endif %}">{{ terminal.health.label }}</span></td>
+                <td>
+                    {% if terminal.last_lease_status %}
+                    <span class="tag {% if terminal.last_lease_status == 'active' %}{% else %}warn{% endif %}">{{ terminal.last_lease_status|title }}</span>
+                    <div class="muted">{{ terminal.last_access_message }}</div>
+                    {% else %}
+                    <span class="tag neutral">No Lease Yet</span>
+                    {% endif %}
+                </td>
+                <td>{{ terminal.app_version or "Unknown" }}</td>
                 <td>{{ terminal.last_seen_at or "Never" }}</td>
+                <td><a href="{{ url_for('platform_terminal_diagnostics', terminal_id=terminal.id) }}">Open</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="3" class="muted">No terminals paired yet.</td></tr>
+            <tr><td colspan="7" class="muted">No terminals paired yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>

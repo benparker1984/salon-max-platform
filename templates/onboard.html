@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <h2>Onboard New Salon</h2>
+    <p class="muted">Single clean flow for creating the business account, first site, first terminal placeholder, and pairing code.</p>
+    <form method="post" action="{{ url_for('create_onboarded_business') }}" class="grid three">
+        <div>
+            <label>Business name</label>
+            <input name="name" placeholder="Example: Ultra Violet" required>
+        </div>
+        <div>
+            <label>Primary contact</label>
+            <input name="contact_name" placeholder="Owner or manager">
+        </div>
+        <div>
+            <label>Contact email</label>
+            <input name="contact_email" type="email">
+        </div>
+        <div>
+            <label>Contact phone</label>
+            <input name="contact_phone">
+        </div>
+        <div>
+            <label>Plan</label>
+            <select name="plan">
+                <option value="standard">Standard</option>
+                <option value="pilot">Pilot</option>
+                <option value="premium">Premium</option>
+            </select>
+        </div>
+        <div>
+            <label>Subscription</label>
+            <select name="subscription_status">
+                <option value="trial">Trial</option>
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+            </select>
+        </div>
+        <div>
+            <label>Business address 1</label>
+            <input name="address_line_1">
+        </div>
+        <div>
+            <label>Business address 2</label>
+            <input name="address_line_2">
+        </div>
+        <div>
+            <label>Town</label>
+            <input name="town">
+        </div>
+        <div>
+            <label>Postcode</label>
+            <input name="postcode">
+        </div>
+        <div>
+            <label>First site name</label>
+            <input name="site_name" placeholder="Example: Main Salon">
+        </div>
+        <div>
+            <label>First site code</label>
+            <input name="site_code" placeholder="Optional">
+        </div>
+        <div>
+            <label>First terminal name</label>
+            <input name="terminal_name" placeholder="Example: Front Desk Till">
+        </div>
+        <div style="grid-column:1/-1;">
+            <label>Support notes</label>
+            <textarea name="notes" placeholder="Install notes, contact preferences, special setup details"></textarea>
+        </div>
+        <div>
+            <button type="submit">Create Onboarding Pack</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

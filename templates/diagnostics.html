@@ -19,6 +19,7 @@
                 <th>App</th>
                 <th>Last Seen</th>
                 <th>Access Message</th>
+                <th>Open</th>
             </tr>
         </thead>
         <tbody>
@@ -31,9 +32,10 @@
                 <td>{{ terminal.app_version or "Unknown" }}</td>
                 <td>{{ terminal.last_seen_at or "Never" }}</td>
                 <td class="muted">{{ terminal.last_access_message }}</td>
+                <td><a href="{{ url_for('platform_terminal_diagnostics', terminal_id=terminal.id) }}">Open</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="muted">No diagnostic data yet. Pair a Pi/till to start seeing check-ins.</td></tr>
+            <tr><td colspan="8" class="muted">No diagnostic data yet. Pair a Pi/till to start seeing check-ins.</td></tr>
             {% endfor %}
         </tbody>
     </table>

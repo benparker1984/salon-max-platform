@@ -6,12 +6,16 @@
         <div class="metric">{{ businesses|length }}</div>
     </div>
     <div class="panel">
-        <div class="muted">Archived Businesses</div>
-        <div class="metric">{{ archived|length }}</div>
+        <div class="muted">Sites</div>
+        <div class="metric">{{ summary.site_count }}</div>
     </div>
     <div class="panel">
-        <div class="muted">Platform</div>
-        <div class="metric">Cloud</div>
+        <div class="muted">Paired Terminals</div>
+        <div class="metric">{{ summary.paired_terminal_count }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Archived Businesses</div>
+        <div class="metric">{{ archived|length }}</div>
     </div>
 </section>
 
@@ -90,6 +94,7 @@
                 <th>Subscription</th>
                 <th>Sites</th>
                 <th>Terminals</th>
+                <th>Last Check-In</th>
                 <th>Contact</th>
                 <th>Open</th>
             </tr>
@@ -102,7 +107,8 @@
                 <td><span class="tag {% if business.status == 'suspended' %}warn{% endif %}">{{ business.status|title }}</span></td>
                 <td><span class="tag {% if business.subscription_status == 'suspended' %}warn{% endif %}">{{ business.subscription_status|title }}</span></td>
                 <td>{{ business.site_count }}</td>
-                <td>{{ business.terminal_count }}</td>
+                <td>{{ business.paired_terminal_count }} paired / {{ business.terminal_count }} total</td>
+                <td>{{ business.last_check_in or "Never" }}</td>
                 <td>
                     {{ business.contact_name }}<br>
                     <span class="muted">{{ business.contact_email }}</span>
@@ -110,7 +116,7 @@
                 <td><a href="{{ url_for('business_detail', public_id=business.public_id) }}">Open</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="8" class="muted">No live businesses yet.</td></tr>
+            <tr><td colspan="9" class="muted">No live businesses yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
