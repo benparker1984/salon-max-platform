@@ -659,6 +659,87 @@ def platform_counts():
     }
 
 
+def active_business_rows():
+    return query_all(
+        """
+        select
+            businesses.*,
+            (select count(*) from sites where sites.business_public_id = businesses.public_id and sites.archived_at is null) as site_count,
+            (select count(*) from terminals where terminals.business_public_id = businesses.public_id and terminals.retired_at is null) as terminal_count,
+            (select count(*) from terminals where terminals.business_public_id = businesses.public_id and terminals.status = 'paired' and terminals.retired_at is null) as paired_terminal_count,
+            (select max(last_seen_at) from terminals where terminals.business_public_id = businesses.public_id and terminals.retired_at is null) as last_check_in
+        from businesses
+        where archived_at is null
+        order by name
+        """
+    )
+
+
+@app.route("/platform/stats")
+def platform_stats():
+    terminals = terminal_rows_with_business()
+    health_counts = {"active": 0, "stale": 0, "neutral": 0}
+    locked_count = 0
+    for terminal in terminals:
+        health_counts[terminal["health"]["status"]] = health_counts.get(terminal["health"]["status"], 0) + 1
+        if (
+            terminal["business_status"] == "suspended"
+            or terminal["subscription_status"] in {"suspended", "cancelled"}
+            or terminal["last_lease_status"] in {"suspended", "cancelled", "archived"}
+        ):
+            locked_count += 1
+    recent_checkins = [
+        terminal for terminal in sorted(
+            terminals,
+            key=lambda item: item["last_seen_at"] or "",
+            reverse=True,
+        )
+        if terminal["last_seen_at"]
+    ][:20]
+    return render_template(
+        "stats.html",
+        title="Salon Max Stats",
+        counts=platform_counts(),
+        businesses=active_business_rows(),
+        terminals=terminals,
+        health_counts=health_counts,
+        locked_count=locked_count,
+        recent_checkins=recent_checkins,
+        notice=request.args.get("notice", "").strip(),
+    )
+
+
+@app.route("/platform/analytics")
+def platform_analytics():
+    terminals = terminal_rows_with_business()
+    version_counts: dict[str, int] = {}
+    health_counts = {"active": 0, "stale": 0, "neutral": 0}
+    business_terminal_counts = []
+    for terminal in terminals:
+        version = terminal["app_version"] or "Unknown"
+        version_counts[version] = version_counts.get(version, 0) + 1
+        health_counts[terminal["health"]["status"]] = health_counts.get(terminal["health"]["status"], 0) + 1
+    for business in active_business_rows():
+        business_terminal_counts.append(
+            {
+                "name": business["name"],
+                "public_id": business["public_id"],
+                "site_count": business["site_count"],
+                "terminal_count": business["terminal_count"],
+                "last_check_in": business["last_check_in"],
+            }
+        )
+    return render_template(
+        "analytics.html",
+        title="Salon Max Analytics",
+        counts=platform_counts(),
+        version_counts=sorted(version_counts.items(), key=lambda item: item[0]),
+        health_counts=health_counts,
+        business_terminal_counts=business_terminal_counts,
+        notice=request.args.get("notice", "").strip(),
+    )
+
+
 @app.route("/platform/licences")
 def platform_licences():
     business_filter = request.args.get("business", "").strip()
