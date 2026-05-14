@@ -167,6 +167,8 @@ def init_db() -> None:
     ensure_column("terminals", "target_app_version", "text not null default ''")
     ensure_column("terminals", "last_lease_status", "text not null default ''")
     ensure_column("terminals", "last_access_message", "text not null default ''")
+    ensure_column("terminals", "support_notes", "text not null default ''")
+    ensure_column("terminals", "retired_at", "text")
 
 
 @app.before_request
@@ -200,6 +202,15 @@ def business_access_state(business) -> tuple[str, str]:
         return "suspended", "This business is suspended and trading is locked."
     if business["subscription_status"] in {"suspended", "cancelled"}:
         return business["subscription_status"], "This subscription is not active and trading is locked."
+    return "active", "Trading enabled."
+
+
+def terminal_access_state(terminal, business) -> tuple[str, str]:
+    business_status, business_message = business_access_state(business)
+    if business_status != "active":
+        return business_status, business_message
+    if terminal["status"] in {"suspended", "retired"}:
+        return terminal["status"], f"This terminal is {terminal['status']} and trading is locked."
     return "active", "Trading enabled."
 
 
@@ -260,7 +271,8 @@ def api_pairing_claim():
             (business["public_id"], site["id"] if site else None, terminal_name, terminal_device_id, timestamp, timestamp, timestamp),
         )
 
-    licence_status, access_message = business_access_state(business)
+    terminal = query_one("select * from terminals where device_public_id = ?", (terminal_device_id,))
+    licence_status, access_message = terminal_access_state(terminal, business)
     return jsonify(
         {
             "ok": True,
@@ -321,14 +333,17 @@ def api_licence_check_in():
         execute(
             """
             update terminals
-            set business_public_id = ?, status = 'paired', last_seen_at = ?,
+            set business_public_id = ?,
+                status = case when status in ('suspended', 'retired') then status else 'paired' end,
+                last_seen_at = ?,
                 app_version = ?, updated_at = ?
             where id = ?
             """,
             (business_public_id, timestamp, app_version, timestamp, terminal["id"]),
         )
 
-    licence_status, access_message = business_access_state(business)
+    terminal = query_one("select * from terminals where device_public_id = ?", (terminal_device_id,))
+    licence_status, access_message = terminal_access_state(terminal, business)
     issued_at = datetime.now(timezone.utc)
     expires_at = issued_at + timedelta(days=30)
     grace_ends_at = issued_at + timedelta(days=37)
@@ -364,7 +379,7 @@ def api_device_config(terminal_device_id: str):
     if business is None:
         return json_error("BUSINESS_NOT_FOUND", "Business account was not found.", status=404)
     site = query_one("select * from sites where id = ?", (terminal["site_id"],)) if terminal["site_id"] else None
-    licence_status, access_message = business_access_state(business)
+    licence_status, access_message = terminal_access_state(terminal, business)
     execute(
         "update terminals set last_seen_at = ?, updated_at = ? where device_public_id = ?",
         (now_utc(), now_utc(), terminal_device_id),
@@ -435,7 +450,9 @@ def platform_owner():
         select
             businesses.*,
             (select count(*) from sites where sites.business_public_id = businesses.public_id and sites.archived_at is null) as site_count,
-            (select count(*) from terminals where terminals.business_public_id = businesses.public_id) as terminal_count
+            (select count(*) from terminals where terminals.business_public_id = businesses.public_id and terminals.retired_at is null) as terminal_count,
+            (select count(*) from terminals where terminals.business_public_id = businesses.public_id and terminals.status = 'paired' and terminals.retired_at is null) as paired_terminal_count,
+            (select max(last_seen_at) from terminals where terminals.business_public_id = businesses.public_id and terminals.retired_at is null) as last_check_in
         from businesses
         {where}
         order by updated_at desc, id desc
@@ -447,7 +464,9 @@ def platform_owner():
         select
             businesses.*,
             (select count(*) from sites where sites.business_public_id = businesses.public_id) as site_count,
-            (select count(*) from terminals where terminals.business_public_id = businesses.public_id) as terminal_count
+            (select count(*) from terminals where terminals.business_public_id = businesses.public_id and terminals.retired_at is null) as terminal_count,
+            (select count(*) from terminals where terminals.business_public_id = businesses.public_id and terminals.status = 'paired' and terminals.retired_at is null) as paired_terminal_count,
+            (select max(last_seen_at) from terminals where terminals.business_public_id = businesses.public_id and terminals.retired_at is null) as last_check_in
         from businesses
         where archived_at is not null
         order by archived_at desc
@@ -458,8 +477,89 @@ def platform_owner():
         businesses=businesses,
         archived=archived,
         search=search,
+        summary={
+            "site_count": sum(int(row["site_count"] or 0) for row in businesses),
+            "paired_terminal_count": sum(int(row["paired_terminal_count"] or 0) for row in businesses),
+        },
         notice=request.args.get("notice", "").strip(),
     )
+
+
+@app.route("/platform/onboard")
+def platform_onboard():
+    return render_template("onboard.html", title="Onboard New Salon", notice=request.args.get("notice", "").strip())
+
+
+@app.post("/platform/onboard/create")
+def create_onboarded_business():
+    name = request.form.get("name", "").strip()
+    site_name = request.form.get("site_name", "").strip()
+    terminal_name = request.form.get("terminal_name", "").strip()
+    if not name:
+        return redirect(url_for("platform_onboard", notice="Business name is required."))
+    public_id = make_business_id(name)
+    timestamp = now_utc()
+    pairing_code = secrets.token_hex(5).upper()
+    execute(
+        """
+        insert into businesses (
+            public_id, name, status, subscription_status, plan,
+            contact_name, contact_email, contact_phone,
+            address_line_1, address_line_2, town, postcode, notes,
+            pairing_code, created_at, updated_at
+        ) values (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            public_id,
+            name,
+            request.form.get("subscription_status", "trial").strip() or "trial",
+            request.form.get("plan", "standard").strip() or "standard",
+            request.form.get("contact_name", "").strip(),
+            request.form.get("contact_email", "").strip(),
+            request.form.get("contact_phone", "").strip(),
+            request.form.get("address_line_1", "").strip(),
+            request.form.get("address_line_2", "").strip(),
+            request.form.get("town", "").strip(),
+            request.form.get("postcode", "").strip(),
+            request.form.get("notes", "").strip(),
+            pairing_code,
+            timestamp,
+            timestamp,
+        ),
+    )
+    site_id = None
+    if site_name:
+        execute(
+            """
+            insert into sites (
+                business_public_id, name, code, status, address_line_1, address_line_2,
+                town, postcode, notes, created_at, updated_at
+            ) values (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                public_id,
+                site_name,
+                request.form.get("site_code", "").strip() or make_site_code(site_name),
+                request.form.get("site_address_line_1", "").strip() or request.form.get("address_line_1", "").strip(),
+                request.form.get("site_address_line_2", "").strip() or request.form.get("address_line_2", "").strip(),
+                request.form.get("site_town", "").strip() or request.form.get("town", "").strip(),
+                request.form.get("site_postcode", "").strip() or request.form.get("postcode", "").strip(),
+                request.form.get("site_notes", "").strip(),
+                timestamp,
+                timestamp,
+            ),
+        )
+        site_id = query_one("select last_insert_rowid() as value")["value"]
+    if terminal_name:
+        execute(
+            """
+            insert into terminals (
+                business_public_id, site_id, terminal_name, status, created_at, updated_at
+            ) values (?, ?, ?, 'awaiting_pairing', ?, ?)
+            """,
+            (public_id, site_id, terminal_name, timestamp, timestamp),
+        )
+    return redirect(url_for("business_detail", public_id=public_id, notice=f"Salon onboarded. Pairing code: {pairing_code}"))
 
 
 @app.post("/platform/businesses/create")
@@ -537,7 +637,7 @@ def terminal_rows_with_business(where: str = "", params: tuple = ()):
         join businesses on businesses.public_id = terminals.business_public_id
         left join sites on sites.id = terminals.site_id
         {where}
-        order by businesses.name, terminals.terminal_name
+        order by terminals.retired_at is not null, businesses.name, terminals.terminal_name
     """
     rows = []
     for row in query_all(sql, params):
@@ -597,6 +697,61 @@ def platform_diagnostics():
         locked=locked,
         notice=request.args.get("notice", "").strip(),
     )
+
+
+@app.route("/platform/diagnostics/terminal/<int:terminal_id>")
+def platform_terminal_diagnostics(terminal_id: int):
+    rows = terminal_rows_with_business("where terminals.id = ?", (terminal_id,))
+    if not rows:
+        return redirect(url_for("platform_diagnostics", notice="Terminal not found."))
+    terminal = rows[0]
+    return render_template(
+        "terminal_diagnostics.html",
+        title="Terminal Diagnostics",
+        terminal=terminal,
+        notice=request.args.get("notice", "").strip(),
+    )
+
+
+@app.post("/platform/terminal/<int:terminal_id>/update")
+def update_terminal(terminal_id: int):
+    terminal = query_one("select * from terminals where id = ?", (terminal_id,))
+    if terminal is None:
+        return redirect(url_for("platform_diagnostics", notice="Terminal not found."))
+    execute(
+        """
+        update terminals
+        set terminal_name = ?, status = ?, target_app_version = ?, support_notes = ?, updated_at = ?
+        where id = ?
+        """,
+        (
+            request.form.get("terminal_name", "").strip() or terminal["terminal_name"],
+            request.form.get("status", terminal["status"]).strip() or terminal["status"],
+            request.form.get("target_app_version", "").strip(),
+            request.form.get("support_notes", "").strip(),
+            now_utc(),
+            terminal_id,
+        ),
+    )
+    return redirect(url_for("platform_terminal_diagnostics", terminal_id=terminal_id, notice="Terminal saved."))
+
+
+@app.post("/platform/terminal/<int:terminal_id>/suspend")
+def suspend_terminal(terminal_id: int):
+    execute("update terminals set status = 'suspended', updated_at = ? where id = ?", (now_utc(), terminal_id))
+    return redirect(url_for("platform_terminal_diagnostics", terminal_id=terminal_id, notice="Terminal suspended."))
+
+
+@app.post("/platform/terminal/<int:terminal_id>/reactivate")
+def reactivate_terminal(terminal_id: int):
+    execute("update terminals set status = 'paired', retired_at = null, updated_at = ? where id = ?", (now_utc(), terminal_id))
+    return redirect(url_for("platform_terminal_diagnostics", terminal_id=terminal_id, notice="Terminal reactivated."))
+
+
+@app.post("/platform/terminal/<int:terminal_id>/retire")
+def retire_terminal(terminal_id: int):
+    execute("update terminals set status = 'retired', retired_at = ?, updated_at = ? where id = ?", (now_utc(), now_utc(), terminal_id))
+    return redirect(url_for("platform_diagnostics", notice="Terminal retired. History has been kept."))
 
 
 @app.route("/platform/updates")
