@@ -10,9 +10,17 @@ from pathlib import Path
 from flask import Flask, g, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # SQLite remains the local fallback.
+    psycopg = None
+    dict_row = None
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("SALONMAX_PLATFORM_DB_PATH") or BASE_DIR / "salonmax_platform.db")
+DATABASE_URL = os.environ.get("SALONMAX_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SALONMAX_SECRET_KEY", "change-this-before-live")
@@ -66,11 +74,20 @@ def terminal_health(row) -> dict:
     return {"status": "neutral", "label": row["status"].replace("_", " ").title()}
 
 
-def db() -> sqlite3.Connection:
+def using_postgres() -> bool:
+    return bool(DATABASE_URL and DATABASE_URL.startswith(("postgres://", "postgresql://")))
+
+
+def db():
     if "db" not in g:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        if using_postgres():
+            if psycopg is None:
+                raise RuntimeError("PostgreSQL is configured but psycopg is not installed.")
+            conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        else:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
         g.db = conn
     return g.db
 
@@ -82,23 +99,51 @@ def close_db(_exc):
         conn.close()
 
 
+def adapt_sql(sql: str) -> str:
+    if not using_postgres():
+        return sql
+    return (
+        sql.replace("integer primary key autoincrement", "bigserial primary key")
+        .replace("?", "%s")
+    )
+
+
 def execute(sql: str, params: tuple = ()) -> None:
-    db().execute(sql, params)
+    db().execute(adapt_sql(sql), params)
     db().commit()
 
 
 def query_one(sql: str, params: tuple = ()):
-    return db().execute(sql, params).fetchone()
+    return db().execute(adapt_sql(sql), params).fetchone()
 
 
 def query_all(sql: str, params: tuple = ()):
-    return db().execute(sql, params).fetchall()
+    return db().execute(adapt_sql(sql), params).fetchall()
 
 
 def ensure_column(table: str, column: str, ddl: str) -> None:
-    existing = {row["name"] for row in query_all(f"pragma table_info({table})")}
+    if using_postgres():
+        existing = {
+            row["column_name"]
+            for row in query_all(
+                """
+                select column_name
+                from information_schema.columns
+                where table_schema = 'public' and table_name = ?
+                """,
+                (table,),
+            )
+        }
+    else:
+        existing = {row["name"] for row in query_all(f"pragma table_info({table})")}
     if column not in existing:
         execute(f"alter table {table} add column {column} {ddl}")
+
+
+def last_insert_id() -> int:
+    if using_postgres():
+        return int(query_one("select lastval() as value")["value"])
+    return int(query_one("select last_insert_rowid() as value")["value"])
 
 
 def init_db() -> None:
@@ -183,7 +228,22 @@ def before_request():
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "product": "salon-max-platform"}
+    return {"ok": True, "product": "salon-max-platform", "database": "postgres" if using_postgres() else "sqlite"}
+
+
+@app.get("/platform/export.json")
+def platform_export_json():
+    return jsonify(
+        {
+            "ok": True,
+            "product": "salon-max-platform",
+            "database": "postgres" if using_postgres() else "sqlite",
+            "exported_at": now_utc(),
+            "businesses": [dict(row) for row in query_all("select * from businesses order by id")],
+            "sites": [dict(row) for row in query_all("select * from sites order by id")],
+            "terminals": [dict(row) for row in query_all("select * from terminals order by id")],
+        }
+    )
 
 
 def json_error(code: str, message: str, status: int = 400):
@@ -549,7 +609,7 @@ def create_onboarded_business():
                 timestamp,
             ),
         )
-        site_id = query_one("select last_insert_rowid() as value")["value"]
+        site_id = last_insert_id()
     if terminal_name:
         execute(
             """
