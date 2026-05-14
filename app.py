@@ -95,6 +95,12 @@ def query_all(sql: str, params: tuple = ()):
     return db().execute(sql, params).fetchall()
 
 
+def ensure_column(table: str, column: str, ddl: str) -> None:
+    existing = {row["name"] for row in query_all(f"pragma table_info({table})")}
+    if column not in existing:
+        execute(f"alter table {table} add column {column} {ddl}")
+
+
 def init_db() -> None:
     execute(
         """
@@ -120,15 +126,6 @@ def init_db() -> None:
         )
         """
     )
-    ensure_column("terminals", "app_version", "text not null default ''")
-    ensure_column("terminals", "last_lease_status", "text not null default ''")
-    ensure_column("terminals", "last_access_message", "text not null default ''")
-
-
-def ensure_column(table: str, column: str, ddl: str) -> None:
-    existing = {row["name"] for row in query_all(f"pragma table_info({table})")}
-    if column not in existing:
-        execute(f"alter table {table} add column {column} {ddl}")
     execute(
         """
         create table if not exists sites (
@@ -166,6 +163,9 @@ def ensure_column(table: str, column: str, ddl: str) -> None:
         )
         """
     )
+    ensure_column("terminals", "app_version", "text not null default ''")
+    ensure_column("terminals", "last_lease_status", "text not null default ''")
+    ensure_column("terminals", "last_access_message", "text not null default ''")
 
 
 @app.before_request
