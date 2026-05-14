@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+    <h2>Analytics</h2>
+    <p class="muted">This page is deliberately operational for now. Sales, customer, package and sunbed trend analytics will be added once transaction sync is cleanly connected to the cloud platform.</p>
+</section>
+
+<section class="grid two">
+    <div class="panel">
+        <h2>Terminal Health Mix</h2>
+        <table>
+            <thead><tr><th>Health</th><th>Count</th></tr></thead>
+            <tbody>
+                <tr><td>Active</td><td>{{ health_counts.active }}</td></tr>
+                <tr><td>Stale / Waiting</td><td>{{ health_counts.stale }}</td></tr>
+                <tr><td>Other</td><td>{{ health_counts.neutral }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="panel">
+        <h2>App Versions</h2>
+        <table>
+            <thead><tr><th>Reported Version</th><th>Terminals</th></tr></thead>
+            <tbody>
+                {% for version, count in version_counts %}
+                <tr><td>{{ version }}</td><td>{{ count }}</td></tr>
+                {% else %}
+                <tr><td colspan="2" class="muted">No app versions reported yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Business Footprint</h2>
+    <p class="muted">Useful for spotting which salons are single-site, multi-site, or missing terminals after onboarding.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Business</th>
+                <th>Sites</th>
+                <th>Terminals</th>
+                <th>Last Check-in</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for business in business_terminal_counts %}
+            <tr>
+                <td>{{ business.name }}<br><span class="muted">{{ business.public_id }}</span></td>
+                <td>{{ business.site_count }}</td>
+                <td>{{ business.terminal_count }}</td>
+                <td>{{ business.last_check_in or "Never" }}</td>
+                <td><a href="{{ url_for('business_detail', public_id=business.public_id) }}">Open</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="muted">No business analytics yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

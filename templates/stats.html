@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid cards">
+    <div class="panel"><div class="muted">Live Businesses</div><div class="metric">{{ counts.businesses }}</div></div>
+    <div class="panel"><div class="muted">Total Terminals</div><div class="metric">{{ counts.terminals }}</div></div>
+    <div class="panel"><div class="muted">Active Check-ins</div><div class="metric">{{ health_counts.active }}</div></div>
+    <div class="panel"><div class="muted">Stale / Waiting</div><div class="metric">{{ health_counts.stale }}</div></div>
+    <div class="panel"><div class="muted">Locked Terminals</div><div class="metric">{{ locked_count }}</div></div>
+</section>
+
+<section class="panel">
+    <h2>Business Estate</h2>
+    <p class="muted">A quick operational snapshot of every live salon account.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Business</th>
+                <th>Account</th>
+                <th>Sites</th>
+                <th>Terminals</th>
+                <th>Status</th>
+                <th>Last Check-in</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for business in businesses %}
+            <tr>
+                <td>{{ business.name }}</td>
+                <td>{{ business.public_id }}</td>
+                <td>{{ business.site_count }}</td>
+                <td>{{ business.paired_terminal_count }} paired / {{ business.terminal_count }} total</td>
+                <td>
+                    <span class="tag {% if business.status == 'suspended' or business.subscription_status in ['suspended', 'cancelled'] %}warn{% endif %}">
+                        {{ business.status }} / {{ business.subscription_status }}
+                    </span>
+                </td>
+                <td>{{ business.last_check_in or "Never" }}</td>
+                <td><a href="{{ url_for('business_detail', public_id=business.public_id) }}">Open</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="muted">No businesses yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Recent Terminal Check-ins</h2>
+    <table>
+        <thead><tr><th>Business</th><th>Site</th><th>Terminal</th><th>Health</th><th>Last Seen</th></tr></thead>
+        <tbody>
+            {% for terminal in recent_checkins %}
+            <tr>
+                <td>{{ terminal.business_name }}</td>
+                <td>{{ terminal.site_name or "Unassigned" }}</td>
+                <td>{{ terminal.terminal_name }}<br><span class="muted">{{ terminal.device_public_id }}</span></td>
+                <td><span class="tag {% if terminal.health.status == 'active' %}{% elif terminal.health.status == 'stale' %}warn{% else %}neutral{% endif %}">{{ terminal.health.label }}</span></td>
+                <td>{{ terminal.last_seen_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="muted">No terminal check-ins yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
