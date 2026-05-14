@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid cards">
+    <div class="panel"><div class="muted">Active Check-ins</div><div class="metric">{{ counts.active_terminals }}</div></div>
+    <div class="panel"><div class="muted">Stale Terminals</div><div class="metric">{{ stale|length }}</div></div>
+    <div class="panel"><div class="muted">Locked Terminals</div><div class="metric">{{ locked|length }}</div></div>
+</section>
+
+<section class="panel">
+    <h2>Terminal Diagnostics</h2>
+    <p class="muted">Support view for finding stale tills, suspended businesses, and devices that have not checked in yet.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Health</th>
+                <th>Business</th>
+                <th>Site</th>
+                <th>Terminal</th>
+                <th>App</th>
+                <th>Last Seen</th>
+                <th>Access Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for terminal in terminals %}
+            <tr>
+                <td><span class="tag {% if terminal.health.status == 'active' %}{% elif terminal.health.status == 'stale' %}warn{% else %}neutral{% endif %}">{{ terminal.health.label }}</span></td>
+                <td>{{ terminal.business_name }}<br><span class="muted">{{ terminal.business_public_id }}</span></td>
+                <td>{{ terminal.site_name or "Unassigned" }}</td>
+                <td>{{ terminal.terminal_name }}<br><span class="muted">{{ terminal.device_public_id }}</span></td>
+                <td>{{ terminal.app_version or "Unknown" }}</td>
+                <td>{{ terminal.last_seen_at or "Never" }}</td>
+                <td class="muted">{{ terminal.last_access_message }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="muted">No diagnostic data yet. Pair a Pi/till to start seeing check-ins.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
