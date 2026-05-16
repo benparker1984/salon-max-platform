@@ -366,6 +366,18 @@ def api_pairing_claim():
 
     terminal = query_one("select * from terminals where device_public_id = ?", (terminal_device_id,))
     licence_status, access_message = terminal_access_state(terminal, business)
+    issued_at = datetime.now(timezone.utc)
+    expires_at = issued_at + timedelta(days=30)
+    grace_ends_at = issued_at + timedelta(days=37)
+    signed_token = f"sm-lease:{terminal_device_id}:{iso_utc(issued_at)}"
+    execute(
+        """
+        update terminals
+        set last_lease_status = ?, last_access_message = ?, updated_at = ?
+        where device_public_id = ?
+        """,
+        (licence_status, access_message, timestamp, terminal_device_id),
+    )
     return jsonify(
         {
             "ok": True,
@@ -382,6 +394,10 @@ def api_pairing_claim():
                 "install_mode": "fresh_install",
                 "licence_status": licence_status,
                 "access_message": access_message,
+                "issued_at": iso_utc(issued_at),
+                "expires_at": iso_utc(expires_at),
+                "grace_ends_at": iso_utc(grace_ends_at),
+                "signed_token": signed_token,
             },
         }
     )
