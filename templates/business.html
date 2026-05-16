@@ -29,6 +29,42 @@
 </section>
 
 <section class="panel">
+    <h2>Commissioning Checklist</h2>
+    <p class="muted">Use this to track the setup work we do for a new salon. The actual prices, staff, sunbeds and customer trading data still live in that salon's own back office.</p>
+    <form method="post" action="{{ url_for('update_commissioning', public_id=business.public_id) }}">
+        <table>
+            <thead>
+                <tr>
+                    <th>Setup item</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for field, label in commissioning_fields %}
+                <tr>
+                    <td>{{ label }}</td>
+                    <td>
+                        <select name="{{ field }}">
+                            {% for option in commissioning_status_options %}
+                            <option value="{{ option }}" {% if business[field] == option %}selected{% endif %}>{{ option.replace("_", " ")|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div style="margin-top:14px;">
+            <label>Commissioning notes</label>
+            <textarea name="commissioning_notes" placeholder="Example: Waiting for salon logo, opening hours and final sunbed photos.">{{ business.commissioning_notes }}</textarea>
+        </div>
+        <div style="margin-top:14px;">
+            <button type="submit">Save Commissioning Checklist</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
     <h2>Business Details</h2>
     <form method="post" action="{{ url_for('update_business', public_id=business.public_id) }}" class="grid three">
         <div>
