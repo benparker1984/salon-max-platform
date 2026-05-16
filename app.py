@@ -274,17 +274,22 @@ def terminal_access_state(terminal, business) -> tuple[str, str]:
     return "active", "Trading enabled."
 
 
+@app.post("/v1/devices/pair")
 @app.post("/v1/pairing/claim")
 def api_pairing_claim():
     payload = request_json()
     pairing_code = str(payload.get("pairing_code") or payload.get("code") or "").strip().upper()
-    terminal_device_id = str(payload.get("terminal_device_id") or payload.get("device_id") or "").strip()
+    device_serial = str(payload.get("device_serial") or "").strip()
+    terminal_device_id = str(
+        payload.get("terminal_device_public_id")
+        or payload.get("terminal_device_id")
+        or payload.get("device_id")
+        or ""
+    ).strip()
     terminal_name = str(payload.get("terminal_name") or terminal_device_id or "Salon Till").strip()
     site_code = str(payload.get("site_code") or "").strip()
     if not pairing_code:
         return json_error("PAIRING_CODE_REQUIRED", "Pairing code is required.")
-    if not terminal_device_id:
-        return json_error("TERMINAL_DEVICE_ID_REQUIRED", "Terminal device id is required.")
 
     business = query_one(
         "select * from businesses where pairing_code = ? and archived_at is null",
@@ -304,8 +309,36 @@ def api_pairing_claim():
             "select * from sites where business_public_id = ? and archived_at is null order by id limit 1",
             (business["public_id"],),
         )
+    if site is None:
+        timestamp = now_utc()
+        execute(
+            """
+            insert into sites (business_public_id, name, code, status, created_at, updated_at)
+            values (?, 'Main Site', 'main-site', 'active', ?, ?)
+            """,
+            (business["public_id"], timestamp, timestamp),
+        )
+        site = query_one(
+            "select * from sites where business_public_id = ? and archived_at is null order by id limit 1",
+            (business["public_id"],),
+        )
 
     timestamp = now_utc()
+    if not terminal_device_id:
+        waiting_terminal = query_one(
+            """
+            select * from terminals
+            where business_public_id = ? and (device_public_id = '' or device_public_id is null)
+            order by id limit 1
+            """,
+            (business["public_id"],),
+        )
+        if waiting_terminal:
+            terminal_device_id = f"term_{waiting_terminal['id']}"
+        else:
+            serial_suffix = re.sub(r"[^a-zA-Z0-9]+", "", device_serial)[-8:].lower() or secrets.token_hex(4)
+            terminal_device_id = f"term_{slugify(terminal_name, 'till')}_{serial_suffix}"
+
     existing = query_one(
         "select * from terminals where device_public_id = ?",
         (terminal_device_id,),
@@ -341,8 +374,12 @@ def api_pairing_claim():
                 "business_name": business["name"],
                 "site_id": site["id"] if site else None,
                 "site_code": site["code"] if site else "",
+                "site_public_id": site["code"] if site else "",
                 "site_name": site["name"] if site else "",
                 "terminal_device_id": terminal_device_id,
+                "terminal_device_public_id": terminal_device_id,
+                "terminal_name": terminal_name,
+                "install_mode": "fresh_install",
                 "licence_status": licence_status,
                 "access_message": access_message,
             },
