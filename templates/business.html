@@ -29,8 +29,64 @@
 </section>
 
 <section class="panel">
-    <h2>Commissioning Checklist</h2>
-    <p class="muted">Use this to track the setup work we do for a new salon. The actual prices, staff, sunbeds and customer trading data still live in that salon's own back office.</p>
+    <h2>Remote Pi / Back Office Setup Profile</h2>
+    <p class="muted">This is the setup profile the paired Pi receives from Salon Max. Use it to pre-program the customer's till and back office before handover, instead of expecting the customer to set everything up themselves.</p>
+    <form method="post" action="{{ url_for('update_remote_setup', public_id=business.public_id) }}">
+        <div class="grid three">
+            <div>
+                <label>Profile status</label>
+                <select name="remote_setup_status">
+                    {% for option in remote_setup_status_options %}
+                    <option value="{{ option }}" {% if business.remote_setup_status == option %}selected{% endif %}>{{ option.replace("_", " ")|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Setup version</label>
+                <input value="{{ business.remote_setup_version }}" disabled>
+            </div>
+            <div>
+                <label>Last updated</label>
+                <input value="{{ business.remote_setup_updated_at or 'Not sent yet' }}" disabled>
+            </div>
+            <div>
+                <label>Till display name</label>
+                <input name="salon_display_name" value="{{ business.salon_display_name }}" placeholder="{{ business.name }}">
+            </div>
+            <div>
+                <label>Back office display name</label>
+                <input name="backoffice_display_name" value="{{ business.backoffice_display_name }}" placeholder="{{ business.name }}">
+            </div>
+            <div>
+                <label>Opening hours</label>
+                <textarea name="opening_hours_setup" placeholder="Example: Mon-Fri 09:00-21:00, Sat 09:00-18:00, Sun 10:00-16:00">{{ business.opening_hours_setup }}</textarea>
+            </div>
+            <div>
+                <label>Pricing and packages to seed</label>
+                <textarea name="pricing_setup" placeholder="Example: 3 mins GBP 3.30, 30 min package GBP 30, 60 min package GBP 55">{{ business.pricing_setup }}</textarea>
+            </div>
+            <div>
+                <label>Staff and manager PINs to seed</label>
+                <textarea name="staff_setup" placeholder="Example: Owner PIN 9999, Manager PIN 8888, Staff PINs to follow">{{ business.staff_setup }}</textarea>
+            </div>
+            <div>
+                <label>Sunbeds to seed</label>
+                <textarea name="sunbed_setup" placeholder="Example: Bed 1 Ergoline Prestige, Bed 2 Megasun 5600, photos required">{{ business.sunbed_setup }}</textarea>
+            </div>
+            <div style="grid-column:1/-1;">
+                <label>Remote setup notes</label>
+                <textarea name="remote_setup_notes" placeholder="Anything the installer or support team needs to know before this Pi is handed over.">{{ business.remote_setup_notes }}</textarea>
+            </div>
+        </div>
+        <div style="margin-top:14px;">
+            <button type="submit">Save Remote Setup Profile</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Commissioning Tracker</h2>
+    <p class="muted">Internal progress tracker for the handover. The remote setup profile above is what the Pi/back office will actually pull down.</p>
     <form method="post" action="{{ url_for('update_commissioning', public_id=business.public_id) }}">
         <table>
             <thead>
