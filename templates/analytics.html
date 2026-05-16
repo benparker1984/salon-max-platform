@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
-    <h2>Analytics</h2>
-    <p class="muted">This page is deliberately operational for now. Sales, customer, package and sunbed trend analytics will be added once transaction sync is cleanly connected to the cloud platform.</p>
+    <h2>Estate Health</h2>
+    <p class="muted">This page is for Salon Max owner-level visibility only: business footprint, terminal health, app versions, stale check-ins, onboarding coverage and support risk.</p>
+    <p class="muted">Customer names, sales totals, packages, staff, stock and individual till sessions stay inside each salon's own back office.</p>
 </section>
 
 <section class="grid two">
@@ -55,7 +56,7 @@
                 <td><a href="{{ url_for('business_detail', public_id=business.public_id) }}">Open</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="5" class="muted">No business analytics yet.</td></tr>
+            <tr><td colspan="5" class="muted">No businesses to summarise yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
