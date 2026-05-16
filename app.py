@@ -76,9 +76,35 @@ COMMISSIONING_FIELDS = (
 )
 
 
+REMOTE_SETUP_STATUS_OPTIONS = ("draft", "ready_to_apply", "applied", "needs_review")
+
+
 def normalise_commissioning_status(value: str) -> str:
     value = (value or "").strip()
     return value if value in COMMISSIONING_STATUS_OPTIONS else "not_started"
+
+
+def normalise_remote_setup_status(value: str) -> str:
+    value = (value or "").strip()
+    return value if value in REMOTE_SETUP_STATUS_OPTIONS else "draft"
+
+
+def business_setup_profile(business, site=None) -> dict:
+    return {
+        "status": business["remote_setup_status"],
+        "version": business["remote_setup_version"],
+        "updated_at": business["remote_setup_updated_at"],
+        "business_name": business["name"],
+        "salon_display_name": business["salon_display_name"] or business["name"],
+        "backoffice_display_name": business["backoffice_display_name"] or business["name"],
+        "site_name": site["name"] if site else "",
+        "site_code": site["code"] if site else "",
+        "opening_hours_setup": business["opening_hours_setup"],
+        "pricing_setup": business["pricing_setup"],
+        "staff_setup": business["staff_setup"],
+        "sunbed_setup": business["sunbed_setup"],
+        "remote_setup_notes": business["remote_setup_notes"],
+    }
 
 
 def terminal_health(row) -> dict:
@@ -236,6 +262,16 @@ def init_db() -> None:
     for column, _label in COMMISSIONING_FIELDS:
         ensure_column("businesses", column, "text not null default 'not_started'")
     ensure_column("businesses", "commissioning_notes", "text not null default ''")
+    ensure_column("businesses", "remote_setup_status", "text not null default 'draft'")
+    ensure_column("businesses", "remote_setup_version", "integer not null default 1")
+    ensure_column("businesses", "remote_setup_updated_at", "text not null default ''")
+    ensure_column("businesses", "salon_display_name", "text not null default ''")
+    ensure_column("businesses", "backoffice_display_name", "text not null default ''")
+    ensure_column("businesses", "opening_hours_setup", "text not null default ''")
+    ensure_column("businesses", "pricing_setup", "text not null default ''")
+    ensure_column("businesses", "staff_setup", "text not null default ''")
+    ensure_column("businesses", "sunbed_setup", "text not null default ''")
+    ensure_column("businesses", "remote_setup_notes", "text not null default ''")
 
 
 @app.before_request
@@ -532,9 +568,22 @@ def api_device_config(terminal_device_id: str):
                 "licence_status": licence_status,
                 "access_message": access_message,
                 "target_app_version": terminal["target_app_version"],
+                "setup_profile": business_setup_profile(business, site),
             },
         }
     )
+
+
+@app.get("/v1/devices/<terminal_device_id>/setup-profile")
+def api_device_setup_profile(terminal_device_id: str):
+    terminal = query_one("select * from terminals where device_public_id = ?", (terminal_device_id,))
+    if terminal is None:
+        return json_error("TERMINAL_NOT_FOUND", "Terminal has not been paired.", status=404)
+    business = query_one("select * from businesses where public_id = ?", (terminal["business_public_id"],))
+    if business is None:
+        return json_error("BUSINESS_NOT_FOUND", "Business account was not found.", status=404)
+    site = query_one("select * from sites where id = ?", (terminal["site_id"],)) if terminal["site_id"] else None
+    return jsonify({"ok": True, "data": business_setup_profile(business, site)})
 
 
 @app.route("/")
@@ -757,6 +806,7 @@ def business_detail(public_id: str):
         terminals=terminal_rows,
         commissioning_fields=COMMISSIONING_FIELDS,
         commissioning_status_options=COMMISSIONING_STATUS_OPTIONS,
+        remote_setup_status_options=REMOTE_SETUP_STATUS_OPTIONS,
         notice=request.args.get("notice", "").strip(),
     )
 
@@ -1088,6 +1138,44 @@ def update_commissioning(public_id: str):
         ),
     )
     return redirect(url_for("business_detail", public_id=public_id, notice="Commissioning checklist saved."))
+
+
+@app.post("/platform/business/<public_id>/remote-setup")
+def update_remote_setup(public_id: str):
+    business = query_one("select * from businesses where public_id = ?", (public_id,))
+    if business is None:
+        return redirect(url_for("platform_owner", notice="Business not found."))
+    execute(
+        """
+        update businesses
+        set remote_setup_status = ?,
+            remote_setup_version = remote_setup_version + 1,
+            remote_setup_updated_at = ?,
+            salon_display_name = ?,
+            backoffice_display_name = ?,
+            opening_hours_setup = ?,
+            pricing_setup = ?,
+            staff_setup = ?,
+            sunbed_setup = ?,
+            remote_setup_notes = ?,
+            updated_at = ?
+        where public_id = ?
+        """,
+        (
+            normalise_remote_setup_status(request.form.get("remote_setup_status", "")),
+            now_utc(),
+            request.form.get("salon_display_name", "").strip(),
+            request.form.get("backoffice_display_name", "").strip(),
+            request.form.get("opening_hours_setup", "").strip(),
+            request.form.get("pricing_setup", "").strip(),
+            request.form.get("staff_setup", "").strip(),
+            request.form.get("sunbed_setup", "").strip(),
+            request.form.get("remote_setup_notes", "").strip(),
+            now_utc(),
+            public_id,
+        ),
+    )
+    return redirect(url_for("business_detail", public_id=public_id, notice="Remote setup profile saved. The Pi will receive it on its next config check."))
 
 
 @app.post("/platform/business/<public_id>/archive")
