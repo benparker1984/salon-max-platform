@@ -62,6 +62,25 @@ def make_site_code(name: str) -> str:
     return slugify(name, "site")[:24]
 
 
+COMMISSIONING_STATUS_OPTIONS = ("not_started", "needed", "in_progress", "done", "blocked")
+COMMISSIONING_FIELDS = (
+    ("pi_image_status", "Blank Pi image prepared"),
+    ("pi_paired_status", "Pi paired to business"),
+    ("backoffice_status", "Business back office opened"),
+    ("branding_status", "Salon name and branding"),
+    ("opening_hours_status", "Opening hours"),
+    ("pricing_status", "Pricing and packages"),
+    ("staff_status", "Staff and manager PINs"),
+    ("sunbeds_status", "Sunbed names and pictures"),
+    ("backup_status", "Backup and restore check"),
+)
+
+
+def normalise_commissioning_status(value: str) -> str:
+    value = (value or "").strip()
+    return value if value in COMMISSIONING_STATUS_OPTIONS else "not_started"
+
+
 def terminal_health(row) -> dict:
     last_seen = parse_utc(row["last_seen_at"])
     if row["status"] == "paired" and last_seen:
@@ -214,6 +233,9 @@ def init_db() -> None:
     ensure_column("terminals", "last_access_message", "text not null default ''")
     ensure_column("terminals", "support_notes", "text not null default ''")
     ensure_column("terminals", "retired_at", "text")
+    for column, _label in COMMISSIONING_FIELDS:
+        ensure_column("businesses", column, "text not null default 'not_started'")
+    ensure_column("businesses", "commissioning_notes", "text not null default ''")
 
 
 @app.before_request
@@ -733,6 +755,8 @@ def business_detail(public_id: str):
         business=business,
         sites=sites,
         terminals=terminal_rows,
+        commissioning_fields=COMMISSIONING_FIELDS,
+        commissioning_status_options=COMMISSIONING_STATUS_OPTIONS,
         notice=request.args.get("notice", "").strip(),
     )
 
@@ -1032,6 +1056,38 @@ def update_business(public_id: str):
         ),
     )
     return redirect(url_for("business_detail", public_id=public_id, notice="Business details saved."))
+
+
+@app.post("/platform/business/<public_id>/commissioning")
+def update_commissioning(public_id: str):
+    business = query_one("select * from businesses where public_id = ?", (public_id,))
+    if business is None:
+        return redirect(url_for("platform_owner", notice="Business not found."))
+    execute(
+        """
+        update businesses
+        set pi_image_status = ?, pi_paired_status = ?, backoffice_status = ?,
+            branding_status = ?, opening_hours_status = ?, pricing_status = ?,
+            staff_status = ?, sunbeds_status = ?, backup_status = ?,
+            commissioning_notes = ?, updated_at = ?
+        where public_id = ?
+        """,
+        (
+            normalise_commissioning_status(request.form.get("pi_image_status", "")),
+            normalise_commissioning_status(request.form.get("pi_paired_status", "")),
+            normalise_commissioning_status(request.form.get("backoffice_status", "")),
+            normalise_commissioning_status(request.form.get("branding_status", "")),
+            normalise_commissioning_status(request.form.get("opening_hours_status", "")),
+            normalise_commissioning_status(request.form.get("pricing_status", "")),
+            normalise_commissioning_status(request.form.get("staff_status", "")),
+            normalise_commissioning_status(request.form.get("sunbeds_status", "")),
+            normalise_commissioning_status(request.form.get("backup_status", "")),
+            request.form.get("commissioning_notes", "").strip(),
+            now_utc(),
+            public_id,
+        ),
+    )
+    return redirect(url_for("business_detail", public_id=public_id, notice="Commissioning checklist saved."))
 
 
 @app.post("/platform/business/<public_id>/archive")
