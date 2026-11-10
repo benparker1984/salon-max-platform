@@ -68,5 +68,5 @@ used for the sealed restore, and an arbitrary test `SALONMAX_SECRET_KEY`, instal
 Before deploying, validate recovery idempotence, protected routes, all console
 screens, duplicate/concurrent sync delivery, rollback, tenant boundaries, imports,
 corrections, media and export. After deploying, check `/healthz` for
-`release=provider-recovery-v1` and `recovery_applied=true`, then verify authenticated
+`release=provider-recovery-v2` and `recovery_applied=true`, then verify authenticated
 pages and observe the existing Pi's sync logs.

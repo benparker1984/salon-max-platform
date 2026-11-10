@@ -1454,12 +1454,12 @@ def mark_cloud_terminal_seen(terminal_device_public_id: str, seen_at: str, app_v
         """
         update cloud_terminal_registry
         set status = 'paired',
-            app_version_reported = ?,
-            last_seen_at = ?,
+            app_version_reported = case when ? != '' then ? else app_version_reported end,
+            last_seen_at = case when coalesce(last_seen_at, '') < ? then ? else last_seen_at end,
             updated_at = current_timestamp
         where terminal_device_public_id = ?
         """,
-        (str(app_version or "").strip(), seen_at, terminal_device_public_id),
+        (str(app_version or "").strip(), str(app_version or "").strip(), seen_at, seen_at, terminal_device_public_id),
     )
 
 
@@ -1585,10 +1585,10 @@ def reconcile_runtime_terminals_for_business(business_account_public_id: str):
     )
     event_rows = platform_query_all(
         """
-        select terminal_device_public_id, payload_json, occurred_at
+        select terminal_device_public_id, payload_json, received_at
         from cloud_sync_events
         where business_account_public_id = ?
-        order by occurred_at desc, id desc
+        order by received_at desc, id desc
         """,
         (business_account_public_id,),
     )
@@ -1608,17 +1608,21 @@ def reconcile_runtime_terminals_for_business(business_account_public_id: str):
             except (TypeError, ValueError, json.JSONDecodeError):
                 payload = {}
             terminal_payload_map[terminal_id] = payload
-            terminal_seen_map[terminal_id] = str(row["occurred_at"] or "").strip()
+            terminal_seen_map[terminal_id] = str(row["received_at"] or "").strip()
 
     for row in licence_rows:
         terminal_id = str(row["terminal_device_public_id"] or "").strip()
         if not terminal_id:
             continue
-        if terminal_id not in terminal_seen_map:
-            terminal_seen_map[terminal_id] = str(row["last_check_in_at"] or "").strip()
+        terminal_seen_map[terminal_id] = max(terminal_seen_map.get(terminal_id, ""), str(row["last_check_in_at"] or "").strip())
 
     terminal_ids = sorted(set(terminal_payload_map) | set(terminal_seen_map))
     for terminal_id in terminal_ids:
+        existing = platform_query_one("select id from cloud_terminal_registry where terminal_device_public_id = ?", (terminal_id,))
+        if existing:
+            if terminal_seen_map.get(terminal_id):
+                mark_cloud_terminal_seen(terminal_id, terminal_seen_map[terminal_id])
+            continue
         ensure_cloud_runtime_terminal_record(
             business_account_public_id=business_account_public_id,
             terminal_device_public_id=terminal_id,

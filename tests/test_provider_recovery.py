@@ -190,3 +190,19 @@ def test_newer_commissioning_profile_is_retained(platform,tenant):
     assert profile.json['data']['salon_display_name']=='Commissioned Salon'
     config=app.test_client().get(f'/v1/devices/{device}/config',headers=headers)
     assert config.json['data']['setup_profile']['opening_hours_setup']=='Monday 09:00-18:00'
+
+
+def test_history_does_not_overwrite_newer_device_metadata(platform,tenant):
+    app,p=platform
+    business,site,device,headers=tenant
+    with app.app_context():
+        p.platform_execute("update cloud_terminal_registry set terminal_name='Newer Till', install_mode='replacement', app_version_reported='newer-2.0', last_seen_at='2026-11-10T21:00:00Z' where terminal_device_public_id=?",(device,))
+        p.platform_execute("update cloud_device_licences set last_check_in_at='2026-11-10T20:00:00Z' where terminal_device_public_id=?",(device,))
+        p.platform_execute('insert into cloud_sync_events (business_account_public_id,terminal_device_public_id,local_event_id,event_type,occurred_at,payload_json,received_at) values (?,?,?,?,?,?,?)',
+            (business,device,'historical','transaction.completed','2026-05-01T10:00:00Z','{}','2026-11-10T20:00:00Z'))
+        p.reconcile_runtime_terminals_for_business(business)
+        row=p.platform_query_one('select * from cloud_terminal_registry where terminal_device_public_id=?',(device,))
+        assert row['terminal_name']=='Newer Till'
+        assert row['install_mode']=='replacement'
+        assert row['app_version_reported']=='newer-2.0'
+        assert row['last_seen_at']=='2026-11-10T21:00:00Z'
