@@ -53,6 +53,8 @@ def from_commissioning(provider, modern):
     for row in modern.query_all('select terminals.*, sites.recovered_public_id from terminals left join sites on sites.id=terminals.site_id'):
         if not row['device_public_id'] or not row['recovered_public_id']:
             continue
-        provider.ensure_cloud_terminal_record(row['business_public_id'], row['recovered_public_id'], row['device_public_id'], row['terminal_name'])
-        provider.platform_execute('update cloud_terminal_registry set terminal_name=?, status=?, management_status=?, desired_app_version=?, updated_at=? where terminal_device_public_id=?',
-            (row['terminal_name'], row['status'], 'retired' if row['retired_at'] else ('suspended' if row['status']=='suspended' else 'active'), row['target_app_version'], row['updated_at'], row['device_public_id']))
+        existing = provider.platform_query_one('select id from cloud_terminal_registry where terminal_device_public_id=?', (row['device_public_id'],))
+        if not existing:
+            provider.ensure_cloud_terminal_record(row['business_public_id'], row['recovered_public_id'], row['device_public_id'], row['terminal_name'])
+        provider.platform_execute('update cloud_terminal_registry set terminal_name=?, site_public_id=?, status=?, management_status=?, desired_app_version=?, updated_at=? where terminal_device_public_id=?',
+            (row['terminal_name'], row['recovered_public_id'], row['status'], 'retired' if row['retired_at'] else ('suspended' if row['status']=='suspended' else 'active'), row['target_app_version'], row['updated_at'], row['device_public_id']))

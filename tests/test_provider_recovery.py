@@ -206,3 +206,20 @@ def test_history_does_not_overwrite_newer_device_metadata(platform,tenant):
         assert row['install_mode']=='replacement'
         assert row['app_version_reported']=='newer-2.0'
         assert row['last_seen_at']=='2026-11-10T21:00:00Z'
+
+
+def test_newer_business_pairing_code_still_works(platform,tenant):
+    app,p=platform
+    business,site,device,headers=tenant
+    c=owner_client(app)
+    assert c.get(f'/commissioning/platform/business/{business}').status_code==200
+    with app.app_context():
+        import commissioning as m
+        m.execute('update businesses set pairing_code=? where public_id=?',('VERIFYNEWCODE',business))
+    response=app.test_client().post('/v1/pairing/claim',json={'pairing_code':'VERIFYNEWCODE','device_serial':'verify-new-pair','terminal_name':'Second Till'})
+    assert response.status_code==200
+    data=response.json['data']
+    assert data['business_account_public_id']==business
+    assert data['site_public_id']==site
+    new_headers={'Authorization':'Bearer '+data['signed_token'],'X-SalonMax-Business-Id':business,'X-SalonMax-Device-Id':data['terminal_device_public_id']}
+    assert app.test_client().get('/v1/customers/directory',headers=new_headers).status_code==200

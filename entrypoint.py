@@ -109,7 +109,7 @@ app.view_functions['dashboard'] = lambda: redirect(url_for('salonmax_owner_conso
 def healthz():
     row = provider.platform_query_one('select count(*) as count from platform_recovery_runs')
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
-                   release='provider-recovery-v2', recovery_applied=bool(row['count']))
+                   release='provider-recovery-v3', recovery_applied=bool(row['count']))
 
 
 @app.get('/platform/estate-health')
@@ -260,7 +260,37 @@ original_pair = provider.device_pair
 
 
 def secure_device_pair():
+    body = request.get_json(silent=True)
+    if isinstance(body,dict) and not body.get('pairing_code') and body.get('code'):
+        body['pairing_code'] = body['code']
     result = original_pair()
+    # The newer commissioning flow issues a business pairing code. Retain that
+    # contract alongside the recovered per-terminal replacement/install codes.
+    if result.status_code == 404 and isinstance(body,dict):
+        code = str(body.get('pairing_code') or '').strip().upper()
+        business = commissioning.query_one('select * from businesses where pairing_code=? and archived_at is null',(code,)) if code else None
+        if business:
+            account = provider.platform_query_one('select * from cloud_business_accounts where business_account_public_id=?',(business['public_id'],))
+            allowed, _, message = provider.business_access_state(account)
+            if not allowed:
+                return provider.json_error('PAIRING_SUSPENDED',message,403)
+            requested_device = str(body.get('terminal_device_public_id') or body.get('terminal_device_id') or body.get('device_id') or '')
+            existing = provider.platform_query_one('select * from cloud_terminal_registry where terminal_device_public_id=?',(requested_device,)) if requested_device else None
+            if existing and (existing['business_account_public_id']!=business['public_id'] or existing['management_status'] in {'retired','suspended'}):
+                return provider.json_error('DEVICE_NOT_AUTHORISED','This device cannot be reassigned with that code.',403)
+            result = commissioning.api_pairing_claim()
+            if isinstance(result,tuple):
+                return result
+            if result.status_code != 200:
+                return result
+            bridge.from_commissioning(provider,commissioning)
+            data = result.get_json()['data']
+            device = data['terminal_device_public_id']
+            terminal = provider.platform_query_one('select * from cloud_terminal_registry where terminal_device_public_id=?',(device,))
+            data['site_public_id'] = terminal['site_public_id']
+            provider.upsert_cloud_device_licence(business_account_public_id=business['public_id'],terminal_device_public_id=device,
+                licence_status=data['licence_status'],signed_token=data['signed_token'],issued_at=data['issued_at'],expires_at=data['expires_at'],last_check_in_at=data['issued_at'])
+            result = jsonify(ok=True,data=data)
     if result.status_code != 200:
         return result
     payload = result.get_json()
