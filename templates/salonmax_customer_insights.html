@@ -1,0 +1,201 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Customer Insights</h2>
+        <div class="muted">Owner-side retention and value view. This is the first "what should the salon do next?" layer: who is active, who is drifting away, and which customers still have unused value sitting in the system.</div>
+    </div>
+
+    <div class="panel">
+        <form method="get" action="{{ url_for('salonmax_owner_customer_insights') }}" class="grid" style="grid-template-columns: 1.4fr 0.8fr auto; align-items:end;">
+            <div>
+                <label for="business_account_public_id">Business</label>
+                <select id="business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="days">Window</label>
+                <select id="days" name="days">
+                    <option value="30" {% if snapshot.filters.days == 30 %}selected{% endif %}>30 Days</option>
+                    <option value="60" {% if snapshot.filters.days == 60 %}selected{% endif %}>60 Days</option>
+                    <option value="90" {% if snapshot.filters.days == 90 %}selected{% endif %}>90 Days</option>
+                    <option value="180" {% if snapshot.filters.days == 180 %}selected{% endif %}>180 Days</option>
+                    <option value="365" {% if snapshot.filters.days == 365 %}selected{% endif %}>365 Days</option>
+                </select>
+            </div>
+            <div>
+                <button type="submit">Refresh Insights</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Active In 30 Days</div>
+            <div class="metric">{{ snapshot.active_30_count }}</div>
+            <div class="muted">{{ snapshot.customer_count }} total cloud customer{{ '' if snapshot.customer_count == 1 else 's' }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Inactive 60+ Days</div>
+            <div class="metric">{{ snapshot.dormant_60_count }}</div>
+            <div class="muted">Customers drifting away</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Dormant With Value</div>
+            <div class="metric">{{ snapshot.dormant_with_value_count }}</div>
+            <div class="muted">Minutes or balance still unused</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Repeat Visitors</div>
+            <div class="metric">{{ snapshot.repeat_visitor_count }}</div>
+            <div class="muted">2+ tanning visits in the selected window</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Top Spending Customers</h2>
+            {% if snapshot.top_spender_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Business</th>
+                        <th>Window Sales</th>
+                        <th>Transactions</th>
+                        <th>Last Activity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.top_spender_rows %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('salonmax_customer_ledger_detail', business_account_public_id=row.business_account_public_id, customer_public_id=row.customer_public_id) }}">{{ row.full_name }}</a>
+                            <div class="muted">{{ row.customer_number or row.customer_public_id }}</div>
+                        </td>
+                        <td>{{ row.business_name }}</td>
+                        <td>GBP {{ "%.2f"|format(row.window_sales_total) }}</td>
+                        <td>{{ row.window_transaction_count }}</td>
+                        <td>{{ row.last_activity_at|localdt or "None yet" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No customer spending data is available yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Most Frequent Visitors</h2>
+            {% if snapshot.repeat_visitor_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Business</th>
+                        <th>Tanning Visits</th>
+                        <th>Window Sales</th>
+                        <th>Last Tanning Visit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.repeat_visitor_rows %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('salonmax_customer_ledger_detail', business_account_public_id=row.business_account_public_id, customer_public_id=row.customer_public_id) }}">{{ row.full_name }}</a>
+                            <div class="muted">{{ row.customer_number or row.customer_public_id }}</div>
+                        </td>
+                        <td>{{ row.business_name }}</td>
+                        <td>{{ row.window_tanning_count }}</td>
+                        <td>GBP {{ "%.2f"|format(row.window_sales_total) }}</td>
+                        <td>{{ row.last_tanning_at|localdt or "None yet" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No repeat-visitor data is available yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>At-Risk Customers</h2>
+            {% if snapshot.dormant_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Days Since Activity</th>
+                        <th>Minutes Left</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.dormant_rows %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('salonmax_customer_ledger_detail', business_account_public_id=row.business_account_public_id, customer_public_id=row.customer_public_id) }}">{{ row.full_name }}</a>
+                            <div class="muted">{{ row.business_name }}</div>
+                        </td>
+                        <td>{{ row.days_since_last_activity }}</td>
+                        <td>{{ row.minutes_available }}</td>
+                        <td>{{ row.currency_code }} {{ "%.2f"|format(row.current_balance) }}</td>
+                        <td>
+                            <span class="tag {% if row.retention_status == 'good' %}{% elif row.retention_status == 'active' %}neutral{% else %}warning{% endif %}">
+                                {{ row.retention_label }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No at-risk customer pattern is visible yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Unused Customer Value</h2>
+            {% if snapshot.unused_value_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Minutes Left</th>
+                        <th>Balance</th>
+                        <th>Last Activity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.unused_value_rows %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('salonmax_customer_ledger_detail', business_account_public_id=row.business_account_public_id, customer_public_id=row.customer_public_id) }}">{{ row.full_name }}</a>
+                            <div class="muted">{{ row.business_name }}</div>
+                        </td>
+                        <td>{{ row.minutes_available }}</td>
+                        <td>{{ row.currency_code }} {{ "%.2f"|format(row.current_balance) }}</td>
+                        <td>{{ row.last_activity_at|localdt or "None yet" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No unused-value data is available yet.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

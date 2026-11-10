@@ -1,0 +1,241 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Customer Businesses</h2>
+        <div class="muted">This is the Salon Max owner-level list of businesses on the platform. Each row should eventually lead into a fully separate business view for support, licensing, sync health, exports, and account management.</div>
+    </div>
+
+    {% if snapshot.business_count == 0 %}
+    <div class="panel">
+        <h2>Platform Ready</h2>
+        <div class="muted" style="margin-bottom:12px;">The Salon Max owner platform is now empty by default and no longer seeded from the salon back office. Your next step is to onboard the first customer business.</div>
+        <div class="row">
+            <a href="{{ url_for('salonmax_onboard_business') }}">Open new salon onboarding</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Platform</div>
+            <div class="metric">{{ snapshot.platform_name }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Businesses</div>
+            <div class="metric">{{ snapshot.business_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Healthy Terminals</div>
+            <div class="metric">{{ snapshot.healthy_terminal_total }}</div>
+            <div class="muted">{{ snapshot.ready_terminal_total }} ready to trade</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Stale Check-Ins</div>
+            <div class="metric">{{ snapshot.stale_terminal_total }}</div>
+            <div class="muted">{{ snapshot.unhealthy_business_count }} business{{ '' if snapshot.unhealthy_business_count == 1 else 'es' }} need attention</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Unlicensed Terminals</div>
+            <div class="metric">{{ snapshot.unlicensed_terminal_total }}</div>
+            <div class="muted">{{ snapshot.paired_terminal_total }} paired across the estate</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Setup Incomplete</div>
+            <div class="metric">{{ snapshot.setup_incomplete_business_count }}</div>
+            <div class="muted">{{ snapshot.expiring_terminal_total }} licence{{ '' if snapshot.expiring_terminal_total == 1 else 's' }} expiring soon</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Add New Business</h2>
+        <div class="muted" style="margin-bottom:12px;">This is the quick-create route. For a proper new-salon signup with contact, billing, address, first site, and first till details, use <a href="{{ url_for('salonmax_onboard_business') }}">Onboard New Salon</a>.</div>
+        <form method="post" action="{{ url_for('salonmax_create_business') }}" class="grid" style="grid-template-columns: 2fr 1fr 1fr auto; align-items:end;">
+            <div>
+                <label for="business_name">Business name</label>
+                <input id="business_name" name="business_name" type="text" placeholder="Example: Bronze Rooms Liverpool" required>
+            </div>
+            <div>
+                <label for="subscription_plan">Plan</label>
+                <select id="subscription_plan" name="subscription_plan">
+                    <option value="pilot">Pilot</option>
+                    <option value="standard">Standard</option>
+                    <option value="multi_site">Multi Site</option>
+                </select>
+            </div>
+            <div>
+                <label for="subscription_status">Subscription</label>
+                <select id="subscription_status" name="subscription_status">
+                    <option value="active">Active</option>
+                    <option value="trial">Trial</option>
+                    <option value="paused">Paused</option>
+                </select>
+            </div>
+            <div>
+                <button type="submit">Create Business</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>Business Account Directory</h2>
+        <div class="muted" style="margin-bottom:12px;">To rename a business, open it and use the <strong>Business Details</strong> section at the top of that page.</div>
+        <form method="get" action="{{ url_for('salonmax_owner_console') }}" class="grid" style="grid-template-columns: 2fr auto auto; align-items:end; margin-bottom:16px;">
+            <div>
+                <label for="search">Search businesses</label>
+                <input id="search" name="search" type="text" value="{{ snapshot.search_text }}" placeholder="Search by business name, account id, contact, email, phone, town, or postcode">
+            </div>
+            <div>
+                <button type="submit">Search</button>
+            </div>
+            <div>
+                <a href="{{ url_for('salonmax_owner_console') }}">Clear</a>
+            </div>
+        </form>
+        {% if snapshot.business_count == 0 %}
+        <div class="muted">No customer businesses matched this view yet.</div>
+        {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Business</th>
+                    <th>Account ID</th>
+                    <th>Onboarding</th>
+                    <th>Plan</th>
+                    <th>Account</th>
+                    <th>Operations</th>
+                    <th>Health</th>
+                    <th>Subscription</th>
+                    <th>Sites</th>
+                    <th>Terminals</th>
+                    <th>Sync Events</th>
+                    <th>Last Check-In</th>
+                    <th>Open</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for business in snapshot.businesses %}
+                <tr>
+                    <td>
+                        <div><strong>{{ business.business_name }}</strong></div>
+                        {% if business.is_local_dev_business %}
+                        <div class="muted">Current local prototype tenant</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div>{{ business.business_account_public_id }}</div>
+                        <div class="muted">Back office: {{ business.backoffice_tenant_id }}</div>
+                    </td>
+                    <td>
+                        <span class="tag {% if business.onboarding_stage == 'ready_to_trade' %}{% elif business.onboarding_stage == 'paired' %}warning{% else %}neutral{% endif %}">
+                            {{ business.onboarding_label }}
+                        </span>
+                        <div class="muted">{{ business.ready_terminal_count }} ready / {{ business.terminal_count }} terminal{{ '' if business.terminal_count == 1 else 's' }}</div>
+                    </td>
+                    <td><span class="tag neutral">{{ business.subscription_plan|title }}</span></td>
+                    <td>
+                        <span class="tag {% if business.account_status != 'active' %}warning{% endif %}">
+                            {{ business.account_status|replace('_', ' ')|title }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="tag {% if business.operational_status == 'active' %}{% elif business.operational_status == 'setup' %}neutral{% else %}warning{% endif %}">
+                            {{ business.operational_label }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="tag {% if business.health_status == 'good' %}{% elif business.health_status == 'neutral' %}neutral{% elif business.health_status == 'danger' %}danger{% else %}warning{% endif %}">
+                            {{ business.health_label }}
+                        </span>
+                        <div class="muted">
+                            {{ business.healthy_terminal_count }} healthy
+                            {% if business.stale_terminal_count %}/ {{ business.stale_terminal_count }} stale{% endif %}
+                            {% if business.unlicensed_terminal_count %}/ {{ business.unlicensed_terminal_count }} unlicensed{% endif %}
+                            {% if business.expiring_terminal_count %}/ {{ business.expiring_terminal_count }} expiring{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="tag {% if business.subscription_status != 'active' %}warning{% endif %}">
+                            {{ business.subscription_status|title }}
+                        </span>
+                    </td>
+                    <td>
+                        {{ business.site_count }}
+                        <div class="muted">{{ business.active_site_count }} active{% if business.suspended_site_count %} / {{ business.suspended_site_count }} suspended{% endif %}</div>
+                    </td>
+                    <td>
+                        {{ business.terminal_count }}
+                        <div class="muted">{{ business.active_terminal_count }} active{% if business.suspended_terminal_count %} / {{ business.suspended_terminal_count }} suspended{% endif %}</div>
+                    </td>
+                    <td>{{ business.sync_event_count }}</td>
+                    <td>{{ business.last_check_in_at|localdt or "None yet" }}</td>
+                    <td>
+                        <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=business.business_account_public_id) }}">Open</a>
+                    </td>
+                    <td>
+                        <div class="stack">
+                            <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=business.business_account_public_id) }}">Edit Details</a>
+                            <form method="post" action="{{ url_for('salonmax_archive_business', business_account_public_id=business.business_account_public_id) }}">
+                            <button type="submit">Archive Business</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+
+    {% if snapshot.archived_businesses %}
+    <div class="panel">
+        <h2>Archived Businesses</h2>
+        <div class="muted" style="margin-bottom:12px;">Archived businesses are hidden from the live directory but kept here so you can restore them later if needed.</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Business</th>
+                    <th>Account ID</th>
+                    <th>Plan</th>
+                    <th>Subscription</th>
+                    <th>Sites</th>
+                    <th>Terminals</th>
+                    <th>Sync Events</th>
+                    <th>Restore</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for business in snapshot.archived_businesses %}
+                <tr>
+                    <td><strong>{{ business.business_name }}</strong></td>
+                    <td>
+                        <div>{{ business.business_account_public_id }}</div>
+                        <div class="muted">Back office: {{ business.backoffice_tenant_id }}</div>
+                    </td>
+                    <td><span class="tag neutral">{{ business.subscription_plan|title }}</span></td>
+                    <td>
+                        <span class="tag {% if business.subscription_status != 'active' %}warning{% endif %}">
+                            {{ business.subscription_status|title }}
+                        </span>
+                    </td>
+                    <td>{{ business.site_count }}</td>
+                    <td>{{ business.terminal_count }}</td>
+                    <td>{{ business.sync_event_count }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('salonmax_restore_business', business_account_public_id=business.business_account_public_id) }}">
+                            <button type="submit">Restore Business</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

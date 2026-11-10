@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+    <h1>Transactions</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Transaction No</th>
+                <th>Customer</th>
+                <th>Site</th>
+                <th>Staff</th>
+                <th>Type</th>
+                <th>Total</th>
+                <th>Payment</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in transaction_rows %}
+            <tr>
+                <td>{{ row.transaction_number }}</td>
+                <td>{{ (row.first_name or "") ~ " " ~ (row.last_name or "") }}</td>
+                <td>{{ row.site_name or "-" }}</td>
+                <td>{{ row.staff_name or "-" }}</td>
+                <td>{{ row.transaction_type }}</td>
+                <td>GBP {{ "%.2f"|format(row.total_amount) }}</td>
+                <td>{{ row.payment_method|title }}</td>
+                <td>{{ row.created_at|localdt }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

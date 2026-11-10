@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="stack">
+    <div class="panel">
+        <h1>Sunbed Settings</h1>
+    </div>
+
+    <div class="panel">
+        <div class="muted" style="margin-bottom: 16px;">
+            Pick a standard manufacturer and model where possible. Use <strong>Custom / Custom Machine</strong> if the bed is unusual or missing from the catalogue.
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Bed</th>
+                    <th>Machine Catalogue</th>
+                    <th>Name On Till</th>
+                    <th>Image</th>
+                    <th>Total Hours</th>
+                    <th>Hours Since Retube</th>
+                    <th>Sessions</th>
+                    <th>Last Retube Reset</th>
+                    <th>Settings</th>
+                    <th>Retube</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bed in sunbeds %}
+                <tr>
+                    <td>Bed {{ bed.bed_number }}</td>
+                    <td>
+                        {% if bed.manufacturer and bed.model %}
+                            <strong>{{ bed.manufacturer }}</strong><br>
+                            <span class="muted">{{ bed.model }}</span>
+                        {% else %}
+                            <span class="muted">Not set</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ bed.custom_name or bed.default_label }}</td>
+                    <td>
+                        {% if bed.customer_display_image_path %}
+                            <img src="{{ bed.customer_display_image_path }}" alt="Bed {{ bed.bed_number }}" style="width:90px; height:60px; object-fit:cover; border-radius:10px; border:1px solid #dbe3ea;">
+                        {% elif bed.default_catalogue_image_path %}
+                            <img src="{{ bed.default_catalogue_image_path }}" alt="Bed {{ bed.bed_number }}" style="width:90px; height:60px; object-fit:cover; border-radius:10px; border:1px solid #dbe3ea;">
+                        {% else %}
+                            <span class="muted">No image</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ "%.1f"|format((bed.total_minutes_used or 0) / 60) }}</td>
+                    <td>{{ "%.1f"|format((bed.retube_minutes_used or 0) / 60) }}</td>
+                    <td>{{ bed.session_count }}</td>
+                    <td>{{ bed.last_retube_reset_at or "-" }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('update_sunbed_settings', sunbed_id=bed.id) }}" class="stack" enctype="multipart/form-data">
+                            <div class="muted" style="font-size: 12px;">Fixed bed number: Bed {{ bed.bed_number }}</div>
+                            <select name="manufacturer" class="sunbed-manufacturer" data-bed-id="{{ bed.id }}">
+                                <option value="">Select manufacturer</option>
+                                {% for manufacturer, models in sunbed_catalogue_by_manufacturer.items() %}
+                                    <option value="{{ manufacturer }}" {% if bed.manufacturer == manufacturer %}selected{% endif %}>{{ manufacturer }}</option>
+                                {% endfor %}
+                            </select>
+                            <select name="model" class="sunbed-model" data-bed-id="{{ bed.id }}" data-selected-model="{{ bed.model }}">
+                                <option value="">Select model</option>
+                            </select>
+                            <input type="text" name="custom_name" value="{{ bed.custom_name }}" placeholder="Optional custom name, e.g. Ergoline Prestige">
+                            <input type="hidden" name="existing_customer_display_image_path" value="{{ bed.customer_display_image_path }}">
+                            <input type="file" name="customer_display_image_file" accept="image/*">
+                            <div class="muted" style="font-size: 12px;">Current image: {{ bed.customer_display_image_path or bed.default_catalogue_image_path or "Not set" }}</div>
+                            <button type="submit">Save</button>
+                        </form>
+                    </td>
+                    <td>
+                        <form method="post" action="{{ url_for('reset_sunbed_retube', sunbed_id=bed.id) }}">
+                            <button type="submit" class="secondary">Reset Retube Clock</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<script>
+    const sunbedCatalogueByManufacturer = {{ sunbed_catalogue_by_manufacturer|tojson }};
+
+    function populateSunbedModelSelect(select) {
+        const bedId = select.dataset.bedId;
+        const form = select.closest("form");
+        const manufacturerSelect = form.querySelector(".sunbed-manufacturer");
+        const manufacturer = manufacturerSelect.value;
+        const selectedModel = select.dataset.selectedModel || "";
+        const models = sunbedCatalogueByManufacturer[manufacturer] || [];
+
+        select.innerHTML = "";
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select model";
+        select.appendChild(placeholder);
+
+        for (const row of models) {
+            const option = document.createElement("option");
+            option.value = row.model;
+            option.textContent = row.model;
+            if (row.model === selectedModel) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        }
+    }
+
+    document.querySelectorAll(".sunbed-model").forEach((select) => {
+        populateSunbedModelSelect(select);
+    });
+
+    document.querySelectorAll(".sunbed-manufacturer").forEach((select) => {
+        select.addEventListener("change", () => {
+            const form = select.closest("form");
+            const modelSelect = form.querySelector(".sunbed-model");
+            modelSelect.dataset.selectedModel = "";
+            populateSunbedModelSelect(modelSelect);
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "till_base.html" %}
+{% block content %}
+<div class="topbar">
+    <div>
+        <h1 style="margin: 0;">Customer Summary</h1>
+        <div class="muted">{{ staff.name }} | Till session #{{ till_session.id }}</div>
+    </div>
+    <div class="row">
+        <a class="buttonish" href="{{ url_for('customer_search') }}">Back To Search</a>
+        <a class="buttonish" href="{{ url_for('till_totals') }}">Totals And Cash Up</a>
+    </div>
+</div>
+
+<div class="panel">
+    <h2 style="margin-bottom: 10px;">{{ customer.first_name }} {{ customer.last_name }}</h2>
+    <div class="row">
+        <div><strong>Customer No:</strong> {{ customer.customer_number }}</div>
+        <div><strong>Account No:</strong> {{ customer.account_number or "-" }}</div>
+    </div>
+</div>
+
+<div class="grid cards">
+    <div class="panel">
+        <div class="muted">Account Balance</div>
+        <div class="metric">GBP {{ "%.2f"|format(customer.account_balance) }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Account Minutes</div>
+        <div class="metric">{{ customer.package_minutes }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Status</div>
+        <div class="metric" style="font-size: 24px;">{{ "Active" if customer.is_active else "Disabled" }}</div>
+    </div>
+</div>
+
+    <div class="panel">
+        <div class="row">
+            <a class="buttonish" href="{{ url_for('till_sell_tanning', customer_id=customer.id) }}">Sell Tanning</a>
+            <a class="buttonish" href="{{ url_for('till_sell_products', customer_id=customer.id) }}">Sell Products</a>
+            <span class="muted">{{ retail_product_count }} retail items ready on the till</span>
+        </div>
+    </div>
+
+<div class="panel">
+    <h2>Recent Transactions</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Transaction No</th>
+                <th>Type</th>
+                <th>Total</th>
+                <th>Payment</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in recent_transactions %}
+            <tr>
+                <td>{{ row.transaction_number }}</td>
+                <td>{{ row.transaction_type }}</td>
+                <td>GBP {{ "%.2f"|format(row.total_amount) }}</td>
+                <td>{{ row.payment_method|replace("_", " ")|title }}</td>
+                <td>{{ row.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

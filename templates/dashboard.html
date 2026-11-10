@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="stack">
+    <div class="panel">
+        <h1>Back Office Dashboard</h1>
+        <div class="muted">Now extended with package products, transactions, and till session tracking.</div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Customers</div>
+            <div class="metric">{{ totals.customer_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Active Staff</div>
+            <div class="metric">{{ totals.active_staff_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Sites</div>
+            <div class="metric">{{ totals.site_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Devices</div>
+            <div class="metric">{{ totals.device_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Open Tills</div>
+            <div class="metric">{{ totals.open_till_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Transactions</div>
+            <div class="metric">{{ totals.transaction_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Sales Total</div>
+            <div class="metric">GBP {{ "%.2f"|format(totals.sales_total) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Account Balance Total</div>
+            <div class="metric">GBP {{ "%.2f"|format(totals.account_balance_total) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Package Minutes Total</div>
+            <div class="metric">{{ totals.package_minutes_total }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Active Products</div>
+            <div class="metric">{{ totals.active_product_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Stock Units</div>
+            <div class="metric">{{ totals.stock_units_total }}</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 2fr 1fr;">
+        <div class="panel">
+            <h2>Sites</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Site</th>
+                        <th>Code</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for site in sites %}
+                    <tr>
+                        <td>{{ site.name }}</td>
+                        <td>{{ site.code }}</td>
+                        <td><span class="tag">Active</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="panel">
+            <h2>Staff Snapshot</h2>
+            <div class="stack">
+                {% for member in staff %}
+                <div>
+                    <strong>{{ member.name }}</strong><br>
+                    <span class="muted">{{ member.role|title }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

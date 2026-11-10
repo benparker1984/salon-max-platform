@@ -1,0 +1,222 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>App Updates</h2>
+        <div class="muted">Owner-side version tracking for every till. This is the groundwork for managed updates: see what each Pi is running, define target versions, and flag devices that are behind or not reporting yet.</div>
+    </div>
+
+    <div class="panel">
+        <form method="get" action="{{ url_for('salonmax_owner_updates') }}" class="grid" style="grid-template-columns: 1.2fr 1fr 1fr auto; align-items:end;">
+            <div>
+                <label for="business_account_public_id">Business</label>
+                <select id="business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="version_filter">Version State</label>
+                <select id="version_filter" name="version_filter">
+                    {% for option in snapshot.version_filters %}
+                    <option value="{{ option.value }}" {% if snapshot.filters.version_filter == option.value %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="sync_filter">Sync State</label>
+                <select id="sync_filter" name="sync_filter">
+                    {% for option in snapshot.sync_filters %}
+                    <option value="{{ option.value }}" {% if snapshot.filters.sync_filter == option.value %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit">Refresh Estate</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Tracked Terminals</div>
+            <div class="metric">{{ snapshot.terminal_count }}</div>
+            <div class="muted">{{ snapshot.current_version_count }} current</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Need Update</div>
+            <div class="metric">{{ snapshot.needs_update_count }}</div>
+            <div class="muted">Behind target version</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Version Unknown</div>
+            <div class="metric">{{ snapshot.unknown_version_count }}</div>
+            <div class="muted">No reported app version yet</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Latest Target</div>
+            <div class="metric" style="font-size:24px;">{{ snapshot.latest_target_version or "Not set" }}</div>
+            <div class="muted">Manual rollout target</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Set Target Version</h2>
+        <div class="muted" style="margin-bottom:12px;">This does not push an update yet. It defines the version and rollout channel each Pi should follow, so the owner platform can flag what needs attention.</div>
+        <form method="post" action="{{ url_for('salonmax_set_global_target_version') }}" class="grid" style="grid-template-columns: 1.2fr 1fr 0.9fr auto; align-items:end;">
+            <div>
+                <label for="target_business_account_public_id">Business Scope</label>
+                <select id="target_business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="desired_app_version">Target Version</label>
+                <input id="desired_app_version" name="desired_app_version" type="text" placeholder="Example: 1.0.3" value="{{ snapshot.latest_target_version }}">
+            </div>
+            <div>
+                <label for="app_update_channel">Channel</label>
+                <select id="app_update_channel" name="app_update_channel">
+                    {% for channel in snapshot.update_channels %}
+                    <option value="{{ channel.value }}">{{ channel.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit">Set Target</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>Business Rollout Summary</h2>
+        <div class="muted" style="margin-bottom:12px;">This is the quickest view of how each salon is sitting against its rollout target and channel.</div>
+        {% if snapshot.business_summaries %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Business</th>
+                    <th>Channel</th>
+                    <th>Target</th>
+                    <th>Terminals</th>
+                    <th>Versions Seen</th>
+                    <th>Version Health</th>
+                    <th>Sync Health</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for business in snapshot.business_summaries %}
+                <tr>
+                    <td>
+                        <div><strong>{{ business.business_name or business.business_account_public_id }}</strong></div>
+                        <div class="muted">{{ business.business_account_public_id }}</div>
+                    </td>
+                    <td><span class="tag neutral">{{ business.update_channel|capitalize }}</span></td>
+                    <td>{{ business.latest_target_version or "Not set" }}</td>
+                    <td>{{ business.terminal_count }}</td>
+                    <td>
+                        {% if business.versions_seen %}
+                        {{ business.versions_seen|join(", ") }}
+                        {% else %}
+                        Unknown
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div>{{ business.current_version_count }} current / {{ business.needs_update_count }} need update</div>
+                        <div class="muted">{{ business.unknown_version_count }} awaiting report</div>
+                    </td>
+                    <td>
+                        <div>{{ business.sync_failing_count }} failing / {{ business.sync_pending_count }} pending</div>
+                        <div class="muted">{{ business.terminal_count - business.sync_failing_count - business.sync_pending_count }} healthy</div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No businesses are available yet.</div>
+        {% endif %}
+    </div>
+
+    <div class="panel">
+        <h2>Estate Versions</h2>
+        {% if snapshot.versions_seen %}
+        <div class="muted" style="margin-bottom:12px;">Seen versions: {{ snapshot.versions_seen|join(", ") }}</div>
+        {% endif %}
+        {% if snapshot.terminals %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Terminal</th>
+                    <th>Business</th>
+                    <th>Channel</th>
+                    <th>Reported</th>
+                    <th>Target</th>
+                    <th>Status</th>
+                    <th>Sync</th>
+                    <th>Next Step</th>
+                    <th>Last Seen</th>
+                    <th>Set Terminal Target</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.terminals %}
+                <tr>
+                    <td>
+                        <div><strong><a href="{{ url_for('salonmax_terminal_diagnostics', terminal_device_public_id=row.terminal_device_public_id) }}">{{ row.terminal_name }}</a></strong></div>
+                        <div class="muted">{{ row.terminal_device_public_id }}</div>
+                    </td>
+                    <td>{{ row.business_name or row.business_account_public_id }}</td>
+                    <td><span class="tag neutral">{{ row.update_channel|capitalize }}</span></td>
+                    <td>{{ row.reported_version or "Unknown" }}</td>
+                    <td>{{ row.desired_version or "-" }}</td>
+                    <td>
+                        <span class="tag {% if row.version_status == 'current' %}{% elif row.version_status == 'neutral' %}neutral{% else %}warning{% endif %}">
+                            {{ row.version_label }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="tag {% if row.sync_status == 'healthy' %}{% elif row.sync_status == 'pending' %}warning{% else %}danger{% endif %}">
+                            {{ row.sync_label }}
+                        </span>
+                    </td>
+                    <td>{{ row.next_action_label }}</td>
+                    <td>{{ row.last_seen_at|localdt or "Never seen" }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('salonmax_set_terminal_target_version', terminal_device_public_id=row.terminal_device_public_id) }}" class="row">
+                            <input name="desired_app_version" type="text" placeholder="1.0.3" value="{{ row.desired_version or snapshot.latest_target_version }}" style="max-width:140px;">
+                            <select name="app_update_channel" style="max-width:120px;">
+                                {% for channel in snapshot.update_channels %}
+                                <option value="{{ channel.value }}" {% if row.update_channel == channel.value %}selected{% endif %}>{{ channel.label }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit">Save</button>
+                        </form>
+                        <div class="row" style="margin-top:8px;">
+                            <form method="post" action="{{ url_for('salonmax_use_reported_terminal_version', terminal_device_public_id=row.terminal_device_public_id) }}">
+                                <button type="submit">Use Reported</button>
+                            </form>
+                            <form method="post" action="{{ url_for('salonmax_clear_terminal_target_version', terminal_device_public_id=row.terminal_device_public_id) }}">
+                                <button type="submit">Clear Target</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No tracked terminals are available yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #050714;
+            --panel: rgba(8, 12, 31, 0.92);
+            --line: rgba(45, 237, 255, 0.36);
+            --text: #fbfdff;
+            --muted: #c6d3ee;
+            --cyan: #2cf4ff;
+            --purple: #8b35ff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                linear-gradient(90deg, rgba(3, 6, 20, 0.96), rgba(3, 6, 20, 0.78), rgba(3, 6, 20, 0.55)),
+                radial-gradient(circle at 74% 18%, rgba(139, 53, 255, 0.34), transparent 34%),
+                radial-gradient(circle at 82% 66%, rgba(44, 244, 255, 0.22), transparent 30%),
+                var(--bg);
+            color: var(--text);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        .shell { max-width: 1180px; margin: 0 auto; padding: 28px; }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .brand { font-size: 1.1rem; font-weight: 900; letter-spacing: 0.08em; }
+        .login-link {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 900;
+        }
+        .hero {
+            min-height: 520px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 300px;
+            gap: 28px;
+            align-items: end;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 36px;
+            background: rgba(3, 6, 20, 0.56);
+            box-shadow: 0 24px 90px rgba(0, 0, 0, 0.34), 0 0 38px rgba(44, 244, 255, 0.12);
+        }
+        .eyebrow {
+            color: var(--cyan);
+            text-transform: uppercase;
+            font-size: 0.78rem;
+            font-weight: 900;
+            letter-spacing: 0.12em;
+            margin-bottom: 12px;
+        }
+        h1 {
+            max-width: 760px;
+            margin: 0 0 10px;
+            font-size: clamp(3rem, 7vw, 5.8rem);
+            line-height: 0.95;
+            letter-spacing: 0;
+        }
+        .tagline {
+            max-width: 620px;
+            margin: 0 0 22px;
+            color: var(--muted);
+            font-size: 1.25rem;
+            font-weight: 800;
+        }
+        .feature-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+        .feature-row span {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #ffffff;
+            font-weight: 900;
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        .primary-cta, .secondary-cta {
+            min-height: 54px;
+            border-radius: 8px;
+            padding: 15px 24px;
+            text-decoration: none;
+            font-weight: 950;
+        }
+        .primary-cta {
+            color: #fff;
+            background: linear-gradient(90deg, #0bbfd4, var(--purple));
+            box-shadow: 0 0 28px rgba(44, 244, 255, 0.22);
+        }
+        .secondary-cta {
+            color: #07111f;
+            background: #fff;
+        }
+        .price-card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 22px;
+            background: rgba(8, 12, 31, 0.72);
+        }
+        .price-card strong {
+            display: block;
+            font-size: 4rem;
+            line-height: 1;
+            margin: 8px 0;
+        }
+        .packages {
+            display: grid;
+            gap: 12px;
+            margin-top: 22px;
+        }
+        .package {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 18px;
+            align-items: center;
+            border: 1px solid rgba(45, 237, 255, 0.22);
+            border-radius: 8px;
+            padding: 16px;
+            background: var(--panel);
+        }
+        .package h2 { margin: 0 0 6px; font-size: 1rem; }
+        .package span, .package small { color: var(--muted); }
+        .package strong { font-size: 1.2rem; white-space: nowrap; }
+        @media (max-width: 820px) {
+            .hero, .package { grid-template-columns: 1fr; }
+            .shell { padding: 16px; }
+            .hero { padding: 22px; min-height: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <header class="topbar">
+            <div class="brand">{{ snapshot.brand_name }}</div>
+            <a class="login-link" href="#login">Member login</a>
+        </header>
+
+        <section class="hero">
+            <div>
+                <div class="eyebrow">{{ snapshot.brand_name }}</div>
+                <h1>{{ snapshot.hero_title }}</h1>
+                <p class="tagline">{{ snapshot.tagline }}</p>
+                <div class="feature-row">
+                    {% for feature in snapshot.features %}
+                    <span>{{ feature }}</span>
+                    {% endfor %}
+                </div>
+                <div class="cta-row">
+                    <a class="primary-cta" href="#join">Join now</a>
+                    <a class="secondary-cta" href="#packages">View classes</a>
+                </div>
+            </div>
+            <aside class="price-card">
+                <div class="eyebrow">Membership</div>
+                <strong>£{{ snapshot.monthly_price }}</strong>
+                <div class="eyebrow">Pay per class £{{ snapshot.payg_price }}</div>
+            </aside>
+        </section>
+
+        <section id="packages" class="packages">
+            {% for row in snapshot.classes %}
+            <article class="package">
+                <div>
+                    <h2>{{ row.name }}</h2>
+                    <span>{{ row.schedule }}</span><br>
+                    <small>PIN access length: {{ row.length }}</small>
+                </div>
+                <strong>£{{ row.price }}</strong>
+            </article>
+            {% endfor %}
+        </section>
+    </div>
+</body>
+</html>

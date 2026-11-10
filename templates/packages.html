@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid" style="grid-template-columns: 2fr 1fr;">
+    <div class="panel">
+        <h1>Package Products</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Minutes</th>
+                    <th>Price</th>
+                    <th>Validity (days)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in package_rows %}
+                <tr>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.code }}</td>
+                    <td>{{ row.minutes_included }}</td>
+                    <td>GBP {{ "%.2f"|format(row.price) }}</td>
+                    <td>{{ row.validity_days }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Create Package</h2>
+        <form method="post" action="{{ url_for('create_package') }}" class="stack">
+            <input type="text" name="name" placeholder="Package name" required>
+            <input type="text" name="code" placeholder="Code" required>
+            <input type="number" name="minutes_included" min="1" placeholder="Minutes included" required>
+            <input type="number" name="price" step="0.01" min="0" placeholder="Price" required>
+            <input type="number" name="validity_days" min="1" placeholder="Validity days" required>
+            <button type="submit">Create Package</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

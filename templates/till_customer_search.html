@@ -1,0 +1,49 @@
+{% extends "till_base.html" %}
+{% block content %}
+<div class="topbar">
+    <div>
+        <h1 style="margin: 0;">Customer Search</h1>
+        <div class="muted">{{ staff.name }} | Till session #{{ till_session.id }}</div>
+    </div>
+    <div class="row">
+        <a class="buttonish" href="{{ url_for('till_totals') }}">Totals And Cash Up</a>
+        <form method="post" action="{{ url_for('till_logout') }}">
+            <button type="submit">Logout</button>
+        </form>
+    </div>
+</div>
+
+<div class="panel">
+    <form method="get" action="{{ url_for('customer_search') }}" class="row">
+        <input type="text" name="q" value="{{ query }}" placeholder="Search customer number, account number, first or last name" style="flex: 1; min-width: 280px;">
+        <button type="submit">Search</button>
+    </form>
+</div>
+
+<div class="panel">
+    <table>
+        <thead>
+            <tr>
+                <th>Customer No</th>
+                <th>Name</th>
+                <th>Account No</th>
+                <th>Balance</th>
+                <th>Account Minutes</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for customer in customers %}
+            <tr>
+                <td>{{ customer.customer_number }}</td>
+                <td>{{ customer.first_name }} {{ customer.last_name }}</td>
+                <td>{{ customer.account_number or "-" }}</td>
+                <td>GBP {{ "%.2f"|format(customer.account_balance) }}</td>
+                <td>{{ customer.package_minutes }}</td>
+                <td><a class="buttonish" href="{{ url_for('till_customer_summary', customer_id=customer.id) }}">Open</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

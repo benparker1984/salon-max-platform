@@ -1,0 +1,342 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Terminal Diagnostics</h2>
+        <div class="muted">Owner-side diagnostics for a single till. This is the safe foundation for remote support: one place to inspect health, version, licence, recent activity, and support notes before any future dial-in tooling.</div>
+        <div class="row" style="margin-top:14px;">
+            <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=snapshot.business_account_public_id) }}">Back to business</a>
+            <a href="{{ url_for('salonmax_owner_updates', business_account_public_id=snapshot.business_account_public_id) }}">Back to updates</a>
+        </div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Terminal</div>
+            <div class="metric" style="font-size:22px;">{{ snapshot.terminal_name }}</div>
+            <div class="muted">{{ snapshot.terminal_device_public_id }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Business / Site</div>
+            <div class="metric" style="font-size:20px;">{{ snapshot.business_name }}</div>
+            <div class="muted">{{ snapshot.site_name }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Version</div>
+            <div class="metric" style="font-size:20px;">{{ snapshot.reported_version or "Unknown" }}</div>
+            <div class="muted">Target {{ snapshot.desired_version or "-" }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Last Seen</div>
+            <div class="metric" style="font-size:20px;">{{ snapshot.last_seen_at|localdt or "Never seen" }}</div>
+            <div class="muted">{{ snapshot.event_count }} recent synced event{{ '' if snapshot.event_count == 1 else 's' }}</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Device State</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <th>Pairing status</th>
+                        <td>{{ snapshot.status|replace('_', ' ')|title }}</td>
+                    </tr>
+                    <tr>
+                        <th>Management status</th>
+                        <td>{{ snapshot.management_status|replace('_', ' ')|title }}</td>
+                    </tr>
+                    <tr>
+                        <th>Install mode</th>
+                        <td>{{ snapshot.install_mode_label }}</td>
+                    </tr>
+                    <tr>
+                        <th>Update status</th>
+                        <td>
+                            <span class="tag {% if snapshot.version_status == 'current' %}{% elif snapshot.version_status == 'neutral' %}neutral{% else %}warning{% endif %}">
+                                {{ snapshot.version_label }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Update channel</th>
+                        <td>{{ snapshot.update_channel|title }}</td>
+                    </tr>
+                    <tr>
+                        <th>Pairing code</th>
+                        <td>{{ snapshot.pairing_code }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="panel">
+            <h2>Licence Health</h2>
+            {% if snapshot.licence_row %}
+            <table>
+                <tbody>
+                    <tr>
+                        <th>Health</th>
+                        <td>
+                            <span class="tag {% if snapshot.check_in_status == 'good' %}{% elif snapshot.check_in_status == 'danger' %}danger{% else %}warning{% endif %}">
+                                {{ snapshot.check_in_label }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Status</th>
+                        <td>{{ snapshot.licence_row.licence_status|replace('_', ' ')|title }}</td>
+                    </tr>
+                    <tr>
+                        <th>Issued</th>
+                        <td>{{ snapshot.licence_row.issued_at|localdt }}</td>
+                    </tr>
+                    <tr>
+                        <th>Expires</th>
+                        <td>{{ snapshot.licence_row.expires_at|localdt }}</td>
+                    </tr>
+                    <tr>
+                        <th>Last check-in</th>
+                        <td>{{ snapshot.licence_row.last_check_in_at|localdt }}</td>
+                    </tr>
+                    <tr>
+                        <th>Token</th>
+                        <td>{{ snapshot.licence_row.signed_token }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No cloud licence record has been seen for this terminal yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Sync Outbox Health</h2>
+        <table>
+            <tbody>
+                <tr>
+                    <th>Sync status</th>
+                    <td>
+                        <span class="tag {% if snapshot.sync_status == 'healthy' %}{% elif snapshot.sync_status == 'pending' %}warning{% else %}danger{% endif %}">
+                            {{ snapshot.sync_label }}
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <th>Pending items</th>
+                    <td>{{ snapshot.sync_pending_count }}</td>
+                </tr>
+                <tr>
+                    <th>Failed items</th>
+                    <td>{{ snapshot.sync_failed_count }}</td>
+                </tr>
+                <tr>
+                    <th>Oldest outstanding</th>
+                    <td>{{ snapshot.sync_oldest_outstanding_at|localdt or "None" }}</td>
+                </tr>
+                <tr>
+                    <th>Last attempt</th>
+                    <td>{{ snapshot.sync_last_attempt_at|localdt or "Never" }}</td>
+                </tr>
+                <tr>
+                    <th>Last acknowledged</th>
+                    <td>{{ snapshot.sync_last_acknowledged_at|localdt or "Never" }}</td>
+                </tr>
+                <tr>
+                    <th>Last checkpoint</th>
+                    <td>{{ snapshot.sync_last_checkpoint_at|localdt or "Never" }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Recent Failed Sync Items</h2>
+            {% if snapshot.recent_failed_items %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Event</th>
+                        <th>Txn / Customer</th>
+                        <th>Attempts</th>
+                        <th>Last Attempt</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.recent_failed_items %}
+                    <tr>
+                        <td>
+                            <div><strong>{{ row.event_type }}</strong></div>
+                            <div class="muted">{{ row.local_event_uuid }}</div>
+                        </td>
+                        <td>
+                            <div>{{ row.transaction_number or "-" }}</div>
+                            <div class="muted">{{ row.customer_number or row.transaction_type or "-" }}</div>
+                        </td>
+                        <td>{{ row.attempt_count }}</td>
+                        <td>{{ row.last_attempt_at|localdt or row.created_at|localdt or "Never" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No failed outbox items are currently reported for this terminal.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Recent Pending Sync Items</h2>
+            {% if snapshot.recent_pending_items %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Event</th>
+                        <th>Txn / Customer</th>
+                        <th>Attempts</th>
+                        <th>Queued</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.recent_pending_items %}
+                    <tr>
+                        <td>
+                            <div><strong>{{ row.event_type }}</strong></div>
+                            <div class="muted">{{ row.local_event_uuid }}</div>
+                        </td>
+                        <td>
+                            <div>{{ row.transaction_number or "-" }}</div>
+                            <div class="muted">{{ row.customer_number or row.transaction_type or "-" }}</div>
+                        </td>
+                        <td>{{ row.attempt_count }}</td>
+                        <td>{{ row.created_at|localdt or "Unknown" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No pending outbox items are currently reported for this terminal.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 0.7fr 1.3fr;">
+        <div class="panel">
+            <h2>Event Types</h2>
+            {% if snapshot.event_type_breakdown %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Event Type</th>
+                        <th>Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.event_type_breakdown %}
+                    <tr>
+                        <td>{{ row.event_type }}</td>
+                        <td>{{ row.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No synced event activity yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Recent Transactions</h2>
+            {% if snapshot.recent_transactions %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Txn</th>
+                        <th>Customer</th>
+                        <th>Type</th>
+                        <th>Payment</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.recent_transactions %}
+                    <tr>
+                        <td>{{ row.occurred_at|localdt }}</td>
+                        <td>{{ row.transaction_number or row.local_event_id }}</td>
+                        <td>{{ row.customer_name or "-" }}</td>
+                        <td>{{ row.transaction_type }}</td>
+                        <td>{{ row.payment_method }}</td>
+                        <td>GBP {{ "%.2f"|format(row.total_amount) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No recent transactions are available for this terminal yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Support Notes</h2>
+            {% if snapshot.support_notes %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Type</th>
+                        <th>Staff</th>
+                        <th>Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for note in snapshot.support_notes %}
+                    <tr>
+                        <td>{{ note.created_at|localdt }}</td>
+                        <td>{{ note.note_type|replace('_', ' ')|title }}</td>
+                        <td>{{ note.author_name or "-" }}</td>
+                        <td>{{ note.note_text }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No support notes are tied directly to this terminal yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Recent Sync Events</h2>
+            {% if snapshot.recent_events %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Type</th>
+                        <th>ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in snapshot.recent_events %}
+                    <tr>
+                        <td>{{ event.occurred_at|localdt or event.received_at|localdt }}</td>
+                        <td>{{ event.event_type }}</td>
+                        <td>{{ event.local_event_id }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No recent sync events are available for this terminal.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

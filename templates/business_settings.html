@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid" style="grid-template-columns: 1.2fr 0.8fr;">
+    <section class="panel stack">
+        <div>
+            <h1>Business Settings</h1>
+            <p class="muted">Control customer-facing business details and the default timing values used by the till.</p>
+        </div>
+
+        {% if notice %}
+        <div class="panel" style="padding:12px 16px; background:#ecfccb; color:#166534; box-shadow:none;">
+            {{ notice }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('update_business_settings') }}" class="stack" enctype="multipart/form-data">
+            <div class="row">
+                <label style="flex:1;">
+                    <div class="muted">Customer Display Business Name</div>
+                    <input type="text" name="business_name" value="{{ settings.business_name }}" style="width:100%;">
+                </label>
+                <label style="width:180px;">
+                    <div class="muted">Currency</div>
+                    <input type="text" name="currency_symbol" value="{{ settings.currency_symbol }}" style="width:100%;">
+                </label>
+            </div>
+
+            <div class="row">
+                <label style="flex:1;">
+                    <div class="muted">Default Package Validity Days</div>
+                    <input type="number" min="1" name="default_package_validity_days" value="{{ settings.default_package_validity_days }}" style="width:100%;">
+                </label>
+                <label style="flex:1;">
+                    <div class="muted">Default Prep Minutes</div>
+                    <input type="number" min="0" name="default_prep_minutes" value="{{ settings.default_prep_minutes }}" style="width:100%;">
+                </label>
+                <label style="flex:1;">
+                    <div class="muted">Default Cooldown Minutes</div>
+                    <input type="number" min="0" name="default_cooldown_minutes" value="{{ settings.default_cooldown_minutes }}" style="width:100%;">
+                </label>
+            </div>
+
+            <div class="row">
+                <label style="flex:1;">
+                    <div class="muted">Peak Price Per Minute</div>
+                    <input type="number" step="0.01" min="0" name="peak_price_per_minute" value="{{ settings.peak_price_per_minute }}" style="width:100%;">
+                </label>
+                <label style="flex:1;">
+                    <div class="muted">Happy Hour Price Per Minute</div>
+                    <input type="number" step="0.01" min="0" name="happy_hour_price_per_minute" value="{{ settings.happy_hour_price_per_minute }}" style="width:100%;">
+                </label>
+            </div>
+
+            <div class="row">
+                <label style="flex:1;">
+                    <div class="muted">Happy Hour 1 Start</div>
+                    <input type="time" name="happy_hour_1_start" value="{{ settings.happy_hour_1_start }}" style="width:100%;">
+                </label>
+                <label style="flex:1;">
+                    <div class="muted">Happy Hour 1 End</div>
+                    <input type="time" name="happy_hour_1_end" value="{{ settings.happy_hour_1_end }}" style="width:100%;">
+                </label>
+            </div>
+
+            <div class="row">
+                <label style="flex:1;">
+                    <div class="muted">Happy Hour 2 Start</div>
+                    <input type="time" name="happy_hour_2_start" value="{{ settings.happy_hour_2_start }}" style="width:100%;">
+                </label>
+                <label style="flex:1;">
+                    <div class="muted">Happy Hour 2 End</div>
+                    <input type="time" name="happy_hour_2_end" value="{{ settings.happy_hour_2_end }}" style="width:100%;">
+                </label>
+            </div>
+
+            <div class="row">
+                <button type="submit">Save Business Settings</button>
+            </div>
+
+            <div class="panel stack" style="box-shadow:none; border:1px solid var(--line);">
+                <div>
+                    <h2 style="margin-bottom:8px;">Management Report Emails</h2>
+                    <p class="muted">Use an email account or app password here. Shift reports send automatically after cash up. Daily reports can be sent from Reports now and scheduled later.</p>
+                </div>
+
+                <label>
+                    <div class="muted">Management Email Addresses</div>
+                    <textarea name="management_report_emails" placeholder="manager@example.com, owner@example.com">{{ settings.management_report_emails }}</textarea>
+                </label>
+
+                <div class="row">
+                    <label style="flex:1;">
+                        <div class="muted">From Email</div>
+                        <input type="email" name="report_from_email" value="{{ settings.report_from_email }}" style="width:100%;">
+                    </label>
+                    <label style="flex:1;">
+                        <div class="muted">SMTP Host</div>
+                        <input type="text" name="smtp_host" value="{{ settings.smtp_host }}" style="width:100%;">
+                    </label>
+                    <label style="width:140px;">
+                        <div class="muted">SMTP Port</div>
+                        <input type="number" min="1" name="smtp_port" value="{{ settings.smtp_port }}" style="width:100%;">
+                    </label>
+                </div>
+
+                <div class="row">
+                    <label style="flex:1;">
+                        <div class="muted">SMTP Username</div>
+                        <input type="text" name="smtp_username" value="{{ settings.smtp_username }}" style="width:100%;">
+                    </label>
+                    <label style="flex:1;">
+                        <div class="muted">SMTP Password</div>
+                        <input type="password" name="smtp_password" value="{{ settings.smtp_password }}" style="width:100%;">
+                    </label>
+                </div>
+
+                <div class="row">
+                    <label><input type="checkbox" name="email_reports_enabled" value="1" {% if settings.email_reports_enabled %}checked{% endif %}> Enable report emails</label>
+                    <label><input type="checkbox" name="smtp_use_tls" value="1" {% if settings.smtp_use_tls %}checked{% endif %}> Use TLS</label>
+                    <label><input type="checkbox" name="auto_email_shift_reports" value="1" {% if settings.auto_email_shift_reports %}checked{% endif %}> Auto email shift reports</label>
+                    <label><input type="checkbox" name="auto_email_daily_reports" value="1" {% if settings.auto_email_daily_reports %}checked{% endif %}> Auto email daily reports (scheduler later)</label>
+                </div>
+            </div>
+        </form>
+    </section>
+
+    <aside class="panel stack">
+        <div>
+            <h2 style="margin-bottom:8px;">Branding Rules</h2>
+            <p class="muted">The software keeps the Salon Max product brand. Your salon name is only used on customer-facing display screens.</p>
+        </div>
+
+        <div class="panel" style="background:#111111; color:#ffffff; box-shadow:none; border:1px solid var(--line);">
+            <div class="row" style="justify-content:space-between; align-items:center;">
+                <div>
+                    <h3 style="margin:0; color:#ffffff;">Salon Max</h3>
+                    <div class="muted" style="color:#ffffff; opacity: 0.8;">Fixed software brand</div>
+                </div>
+                <span class="tag" style="background:#155e75; color: white;">{{ settings.currency_symbol }}</span>
+            </div>
+            <div class="row" style="margin-top:16px;">
+                <button type="button" style="background:#1976d2;">Main Button</button>
+                <button type="button" style="background:#155e75;">Primary Panel</button>
+            </div>
+        </div>
+
+        <div class="stack">
+            <div><strong>Software Brand:</strong> <span class="muted">{{ settings.platform_brand_name }}</span></div>
+            <div><strong>Customer Display Name:</strong> <span class="muted">{{ settings.business_name }}</span></div>
+            <div><strong>Prep Minutes:</strong> <span class="muted">{{ settings.default_prep_minutes }}</span></div>
+            <div><strong>Cooldown Minutes:</strong> <span class="muted">{{ settings.default_cooldown_minutes }}</span></div>
+            <div><strong>Package Validity:</strong> <span class="muted">{{ settings.default_package_validity_days }} days</span></div>
+            <div><strong>Peak Price:</strong> <span class="muted">{{ settings.currency_symbol }} {{ "%.2f"|format(settings.peak_price_per_minute) }}/min</span></div>
+            <div><strong>Happy Hour Price:</strong> <span class="muted">{{ settings.currency_symbol }} {{ "%.2f"|format(settings.happy_hour_price_per_minute) }}/min</span></div>
+            <div><strong>Happy Hour 1:</strong> <span class="muted">{{ settings.happy_hour_1_start }} - {{ settings.happy_hour_1_end }}</span></div>
+            <div><strong>Happy Hour 2:</strong> <span class="muted">{{ settings.happy_hour_2_start }} - {{ settings.happy_hour_2_end }}</span></div>
+        </div>
+    </aside>
+</div>
+{% endblock %}

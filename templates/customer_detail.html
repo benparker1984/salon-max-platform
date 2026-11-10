@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="stack">
+    <div class="panel">
+        <h1>{{ customer.first_name }} {{ customer.last_name }}</h1>
+        <div class="row">
+            <div><strong>Customer No:</strong> {{ customer.customer_number }}</div>
+            <div><strong>Account No:</strong> {{ customer.account_number or "-" }}</div>
+            <div><strong>Phone:</strong> {{ customer.phone or "-" }}</div>
+            <div><strong>Email:</strong> {{ customer.email or "-" }}</div>
+        </div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Account Balance</div>
+            <div class="metric">GBP {{ "%.2f"|format(customer.account_balance) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Package Minutes</div>
+            <div class="metric">{{ customer.package_minutes }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Status</div>
+            <div class="metric" style="font-size: 24px;">{{ "Active" if customer.is_active else "Disabled" }}</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Top Up Minutes</h2>
+            <div class="muted" style="margin-bottom: 12px;">Management only. This adds account minutes without recording a sale.</div>
+            <form method="post" action="{{ url_for('customer_topup_minutes', customer_id=customer.id) }}" class="stack">
+                <input type="number" min="1" name="minutes" placeholder="Minutes to add" required>
+                <button type="submit">Record Top Up</button>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>Management Note</h2>
+            <div class="muted">Package sales should happen through the till flow. This page is now only for customer management and audit corrections.</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Recent Transactions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Transaction No</th>
+                    <th>Type</th>
+                    <th>Total</th>
+                    <th>Payment</th>
+                    <th>Date</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transaction in transactions %}
+                <tr>
+                    <td>{{ transaction.transaction_number }}</td>
+                    <td>{{ transaction.transaction_type }}</td>
+                    <td>GBP {{ "%.2f"|format(transaction.total_amount) }}</td>
+                    <td>{{ transaction.payment_method|title }}</td>
+                    <td>{{ transaction.created_at|localdt }}</td>
+                    <td>{{ transaction.notes or "-" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

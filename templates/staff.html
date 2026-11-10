@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid" style="grid-template-columns: 2fr 1fr;">
+    <div class="panel">
+        <h1>Staff</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>PIN</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in staff_rows %}
+                <tr>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.pin_code }}</td>
+                    <td>{{ row.role|title }}</td>
+                    <td>{{ "Active" if row.is_active else "Disabled" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Add Staff Member</h2>
+        <form method="post" action="{{ url_for('create_staff') }}" class="stack">
+            <input type="text" name="name" placeholder="Staff name" required>
+            <input type="text" name="pin_code" placeholder="Till PIN" required>
+            <select name="role">
+                <option value="staff">Staff</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+            </select>
+            <button type="submit">Create Staff Profile</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

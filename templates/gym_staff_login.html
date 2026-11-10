@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ snapshot.brand_name }} Staff Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='gym_access/styles.css') }}">
+  </head>
+  <body class="staff-login-body">
+    <main class="staff-login-shell">
+      <section class="staff-login-card">
+        <p class="eyebrow">Gym staff access</p>
+        <h1>{{ snapshot.brand_name }}</h1>
+        <p>Staff access is required for reception check-in, management, payments, classes, and member records.</p>
+
+        {% if notice %}
+        <div class="decision deny">{{ notice }}</div>
+        {% endif %}
+
+        {% if password_configured %}
+        <form method="post" class="staff-login-form">
+          <input type="hidden" name="next" value="{{ next_url }}">
+          <label>
+            Staff password
+            <input type="password" name="password" required autofocus autocomplete="current-password">
+          </label>
+          <button class="primary-button" type="submit">Sign in</button>
+        </form>
+        {% else %}
+        <div class="decision neutral">
+          Staff password has not been set yet. Open the Salon Max Gym Access admin page and set the first staff password.
+        </div>
+        {% endif %}
+
+        <a href="{{ url_for('salonmax_public_gym_site', business_account_public_id=snapshot.business_account_public_id) }}">Back to customer website</a>
+      </section>
+    </main>
+  </body>
+</html>

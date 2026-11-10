@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="panel" style="padding:12px 16px; background:#ecfccb; color:#166534; box-shadow:none;">
+        {{ notice }}
+    </div>
+    {% endif %}
+
+    <div class="panel">
+        <h1>Reports</h1>
+        <div class="muted">Daily totals, weekly totals, site summaries, and best-seller snapshots for tanning, packages, and creams/products.</div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Today Sales</div>
+            <div class="metric">GBP {{ "%.2f"|format(today_totals.sales_total) }}</div>
+            <div class="muted">{{ today_totals.transaction_count }} transactions</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Today Cash / Card</div>
+            <div class="metric">GBP {{ "%.2f"|format(today_totals.cash_total) }}</div>
+            <div class="muted">Card: GBP {{ "%.2f"|format(today_totals.card_total) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Week Sales</div>
+            <div class="metric">GBP {{ "%.2f"|format(week_totals.sales_total) }}</div>
+            <div class="muted">{{ week_totals.transaction_count }} transactions</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Week Cash / Card</div>
+            <div class="metric">GBP {{ "%.2f"|format(week_totals.cash_total) }}</div>
+            <div class="muted">Card: GBP {{ "%.2f"|format(week_totals.card_total) }}</div>
+        </div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Today Tanning</div>
+            <div class="metric">GBP {{ "%.2f"|format(today_totals.tanning_total) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Today Packages</div>
+            <div class="metric">GBP {{ "%.2f"|format(today_totals.package_total) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Today Retail</div>
+            <div class="metric">GBP {{ "%.2f"|format(today_totals.retail_total) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Week Retail</div>
+            <div class="metric">GBP {{ "%.2f"|format(week_totals.retail_total) }}</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel stack">
+            <div>
+                <h2>Open Any Day</h2>
+                <div class="muted">Choose a date and open every transaction for that day. Useful for tracing lost courses and historic corrections.</div>
+            </div>
+            <form method="get" action="{{ url_for('reports') }}" class="row">
+                <input type="date" name="selected_day" value="{{ selected_day }}">
+                <input type="hidden" name="compare_a" value="{{ compare_a }}">
+                <input type="hidden" name="compare_b" value="{{ compare_b }}">
+                <button type="submit">Open Day</button>
+            </form>
+            <form method="post" action="{{ url_for('email_selected_day_report') }}" class="row">
+                <input type="hidden" name="selected_day" value="{{ selected_day }}">
+                <input type="hidden" name="compare_a" value="{{ compare_a }}">
+                <input type="hidden" name="compare_b" value="{{ compare_b }}">
+                <button type="submit">Email This Day To Management</button>
+            </form>
+            <div class="grid cards">
+                <div class="panel">
+                    <div class="muted">Selected Day Sales</div>
+                    <div class="metric">GBP {{ "%.2f"|format(selected_day_totals.sales_total) }}</div>
+                </div>
+                <div class="panel">
+                    <div class="muted">Selected Day Transactions</div>
+                    <div class="metric">{{ selected_day_totals.transaction_count }}</div>
+                </div>
+                <div class="panel">
+                    <div class="muted">Selected Day Cash</div>
+                    <div class="metric">GBP {{ "%.2f"|format(selected_day_totals.cash_total) }}</div>
+                </div>
+                <div class="panel">
+                    <div class="muted">Selected Day Card</div>
+                    <div class="metric">GBP {{ "%.2f"|format(selected_day_totals.card_total) }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel stack">
+            <div>
+                <h2>Compare Two Dates</h2>
+                <div class="muted">Pick any two dates and compare totals side by side.</div>
+            </div>
+            <form method="get" action="{{ url_for('reports') }}" class="row">
+                <input type="hidden" name="selected_day" value="{{ selected_day }}">
+                <label style="display:grid; gap:6px;">
+                    <span class="muted">Date A</span>
+                    <input type="date" name="compare_a" value="{{ compare_a }}">
+                </label>
+                <label style="display:grid; gap:6px;">
+                    <span class="muted">Date B</span>
+                    <input type="date" name="compare_b" value="{{ compare_b }}">
+                </label>
+                <button type="submit">Compare Dates</button>
+            </form>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>{{ compare_a }}</th>
+                        <th>{{ compare_b }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Sales Total</td>
+                        <td>GBP {{ "%.2f"|format(compare_a_totals.sales_total) }}</td>
+                        <td>GBP {{ "%.2f"|format(compare_b_totals.sales_total) }}</td>
+                    </tr>
+                    <tr>
+                        <td>Transactions</td>
+                        <td>{{ compare_a_totals.transaction_count }}</td>
+                        <td>{{ compare_b_totals.transaction_count }}</td>
+                    </tr>
+                    <tr>
+                        <td>Cash</td>
+                        <td>GBP {{ "%.2f"|format(compare_a_totals.cash_total) }}</td>
+                        <td>GBP {{ "%.2f"|format(compare_b_totals.cash_total) }}</td>
+                    </tr>
+                    <tr>
+                        <td>Card</td>
+                        <td>GBP {{ "%.2f"|format(compare_a_totals.card_total) }}</td>
+                        <td>GBP {{ "%.2f"|format(compare_b_totals.card_total) }}</td>
+                    </tr>
+                    <tr>
+                        <td>Tanning</td>
+                        <td>GBP {{ "%.2f"|format(compare_a_totals.tanning_total) }}</td>
+                        <td>GBP {{ "%.2f"|format(compare_b_totals.tanning_total) }}</td>
+                    </tr>
+                    <tr>
+                        <td>Packages</td>
+                        <td>GBP {{ "%.2f"|format(compare_a_totals.package_total) }}</td>
+                        <td>GBP {{ "%.2f"|format(compare_b_totals.package_total) }}</td>
+                    </tr>
+                    <tr>
+                        <td>Retail</td>
+                        <td>GBP {{ "%.2f"|format(compare_a_totals.retail_total) }}</td>
+                        <td>GBP {{ "%.2f"|format(compare_b_totals.retail_total) }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>By Site</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Site</th>
+                    <th>Transactions</th>
+                    <th>Sales Total</th>
+                    <th>Top-Ups</th>
+                    <th>Package Sales</th>
+                    <th>Retail Sales</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in site_rows %}
+                <tr>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.transaction_count }}</td>
+                    <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                    <td>GBP {{ "%.2f"|format(row.topup_total) }}</td>
+                    <td>GBP {{ "%.2f"|format(row.package_sales_total) }}</td>
+                    <td>GBP {{ "%.2f"|format(row.retail_sales_total) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Best Sellers Today</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Sales</th>
+                        <th>Units</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in best_sellers_today %}
+                    <tr>
+                        <td>{{ row.description }}</td>
+                        <td>{{ row.sale_count }}</td>
+                        <td>{{ row.units_sold }}</td>
+                        <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="muted">No completed sales yet today.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="panel">
+            <h2>Best Sellers This Week</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Sales</th>
+                        <th>Units</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in best_sellers_week %}
+                    <tr>
+                        <td>{{ row.description }}</td>
+                        <td>{{ row.sale_count }}</td>
+                        <td>{{ row.units_sold }}</td>
+                        <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="muted">No completed sales yet this week.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Transactions For {{ selected_day }}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Transaction No</th>
+                    <th>Customer</th>
+                    <th>Type</th>
+                    <th>Total</th>
+                    <th>Payment</th>
+                    <th>Site</th>
+                    <th>Staff</th>
+                    <th>Time</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in selected_day_transactions %}
+                <tr>
+                    <td>{{ row.transaction_number }}</td>
+                    <td>{{ row.first_name or "-" }} {{ row.last_name or "" }}</td>
+                    <td>{{ row.transaction_type }}</td>
+                    <td>GBP {{ "%.2f"|format(row.total_amount) }}</td>
+                    <td>{{ row.payment_method|title }}</td>
+                    <td>{{ row.site_name or "-" }}</td>
+                    <td>{{ row.staff_name or "-" }}</td>
+                        <td>{{ row.created_at|localdt }}</td>
+                    <td>{{ row.notes or "-" }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="muted">No transactions recorded for this day.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

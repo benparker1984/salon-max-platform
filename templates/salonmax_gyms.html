@@ -1,0 +1,138 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Gym Businesses</h2>
+        <div class="muted">Separate customer accounts for gyms and fitness sites. This area is for setup, subscription billing, suspension, uptime checks, and keeping their public joining pages running. Salon/tanning businesses stay in Business Accounts.</div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Businesses</div>
+            <div class="metric">{{ snapshot.business_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Ready For Device Setup</div>
+            <div class="metric">{{ snapshot.ready_count }}</div>
+            <div class="muted">Has at least one platform terminal/device row</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Module Stage</div>
+            <div class="metric" style="font-size:22px;">Separate</div>
+            <div class="muted">Gym businesses are kept apart from salon customers</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Add New Gym</h2>
+        <div class="muted" style="margin-bottom:12px;">Use this for KADO-style gym customers. This creates a gym business account only; it does not add salon tills, sunbeds, or salon back-office setup.</div>
+        <form method="post" action="{{ url_for('salonmax_create_gym_business') }}" class="stack">
+            <div class="grid" style="grid-template-columns: 1.4fr 0.8fr 0.8fr 0.8fr; align-items:end;">
+                <div>
+                    <label for="business_name">Gym name</label>
+                    <input id="business_name" name="business_name" type="text" placeholder="Example: KADO Fitness" required>
+                </div>
+                <div>
+                    <label for="subscription_status">Subscription</label>
+                    <select id="subscription_status" name="subscription_status">
+                        <option value="trial">Trial</option>
+                        <option value="active">Active</option>
+                        <option value="paused">Paused</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="monthly_fee">Lease price</label>
+                    <input id="monthly_fee" name="monthly_fee" type="text" placeholder="100">
+                </div>
+                <div>
+                    <button type="submit">Create Gym</button>
+                </div>
+            </div>
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                <div>
+                    <label for="contact_name">Contact name</label>
+                    <input id="contact_name" name="contact_name" type="text">
+                </div>
+                <div>
+                    <label for="contact_email">Contact email</label>
+                    <input id="contact_email" name="contact_email" type="email">
+                </div>
+                <div>
+                    <label for="contact_phone">Contact phone</label>
+                    <input id="contact_phone" name="contact_phone" type="text">
+                </div>
+            </div>
+            <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                <div>
+                    <label for="city">Town / city</label>
+                    <input id="city" name="city" type="text">
+                </div>
+                <div>
+                    <label for="postcode">Postcode</label>
+                    <input id="postcode" name="postcode" type="text">
+                </div>
+            </div>
+            <div>
+                <label for="notes">Internal notes</label>
+                <input id="notes" name="notes" type="text" placeholder="Setup notes, billing notes, door/access notes">
+            </div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>Gym Business Directory</h2>
+        {% if snapshot.rows %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Business</th>
+                    <th>Contact</th>
+                    <th>Location</th>
+                    <th>Subscription</th>
+                    <th>Lease</th>
+                    <th>Sites</th>
+                    <th>Devices</th>
+                    <th>Gym Module</th>
+                    <th>Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.rows %}
+                <tr>
+                    <td>
+                        <div><strong>{{ row.business_name }}</strong></div>
+                        <div class="muted">{{ row.business_account_public_id }}</div>
+                    </td>
+                    <td>
+                        <div>{{ row.contact_name or "-" }}</div>
+                        <div class="muted">{{ row.contact_email or row.contact_phone or "-" }}</div>
+                    </td>
+                    <td>{{ row.city or row.postcode or "-" }}</td>
+                    <td>
+                        <span class="tag {% if row.subscription_status != 'active' %}warning{% endif %}">{{ row.subscription_status|replace('_', ' ')|title }}</span>
+                        <div class="muted">{{ row.status|replace('_', ' ')|title }}</div>
+                    </td>
+                    <td>GBP {{ row.monthly_fee }}/month</td>
+                    <td>{{ row.site_count }}</td>
+                    <td>
+                        {{ row.terminal_count }}
+                        <div class="muted">{{ row.active_licence_count }} active licence{{ '' if row.active_licence_count == 1 else 's' }}</div>
+                    </td>
+                    <td><span class="tag neutral">{{ row.gym_module_status }}</span></td>
+                    <td>
+                        <a href="{{ url_for('salonmax_owner_business_gym_access', business_account_public_id=row.business_account_public_id) }}">Open Gym Access</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No business accounts are available yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

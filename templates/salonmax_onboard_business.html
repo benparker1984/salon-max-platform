@@ -1,0 +1,198 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+    {% if pairing_code %}
+    <div class="panel">
+        <h2>Onboarding Pack Ready</h2>
+        <div class="grid" style="grid-template-columns: 0.9fr 1.1fr; gap:18px; align-items:start;">
+            <div>
+                <div class="muted">First terminal pairing code</div>
+                <div class="metric">{{ pairing_code }}</div>
+            </div>
+            <div class="stack muted">
+                <div>1. Start the Raspberry Pi and let the till open its Device Setup screen.</div>
+                <div>2. Enter pairing code <strong>{{ pairing_code }}</strong> on the Pi.</div>
+                <div>3. After pairing, the Pi will move into the first staff setup screen.</div>
+                <div>4. Create the salon's first owner or manager PIN on the Pi itself.</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>New Salon Onboarding</h2>
+        <div class="muted">This is the friendlier signup path for a brand new salon. Instead of creating pieces one by one, set up the customer business, first site, and first till in one pass.</div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1.3fr 0.7fr;">
+        <div class="panel">
+            <h2>Create Business, Site, and First Till</h2>
+            <form method="post" action="{{ url_for('salonmax_create_business_with_first_site') }}" class="stack">
+                <div class="grid" style="grid-template-columns: 1.6fr 0.8fr 0.8fr;">
+                    <div>
+                        <label for="business_name">Business name</label>
+                        <input id="business_name" name="business_name" type="text" placeholder="Example: Bronze Rooms Liverpool" required>
+                    </div>
+                    <div>
+                        <label for="subscription_plan">Plan</label>
+                        <select id="subscription_plan" name="subscription_plan">
+                            <option value="pilot">Pilot</option>
+                            <option value="standard">Standard</option>
+                            <option value="multi_site">Multi Site</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="subscription_status">Subscription</label>
+                        <select id="subscription_status" name="subscription_status">
+                            <option value="active">Active</option>
+                            <option value="trial">Trial</option>
+                            <option value="paused">Paused</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                    <div>
+                        <label for="contact_name">Primary contact name</label>
+                        <input id="contact_name" name="contact_name" type="text" placeholder="Example: Sarah Jones">
+                    </div>
+                    <div>
+                        <label for="contact_email">Contact email</label>
+                        <input id="contact_email" name="contact_email" type="email" placeholder="sarah@bronzerooms.co.uk">
+                    </div>
+                    <div>
+                        <label for="contact_phone">Contact phone</label>
+                        <input id="contact_phone" name="contact_phone" type="text" placeholder="07123 456789">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                    <div>
+                        <label for="billing_email">Billing email</label>
+                        <input id="billing_email" name="billing_email" type="email" placeholder="accounts@bronzerooms.co.uk">
+                    </div>
+                    <div>
+                        <label for="company_number">Company number</label>
+                        <input id="company_number" name="company_number" type="text" placeholder="Optional">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                    <div>
+                        <label for="vat_number">VAT number</label>
+                        <input id="vat_number" name="vat_number" type="text" placeholder="Optional">
+                    </div>
+                    <div>
+                        <label for="contract_start_date">Contract start date</label>
+                        <input id="contract_start_date" name="contract_start_date" type="date">
+                    </div>
+                    <div>
+                        <label for="renewal_date">Renewal date</label>
+                        <input id="renewal_date" name="renewal_date" type="date">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 0.8fr 1.2fr;">
+                    <div>
+                        <label for="monthly_fee">Monthly fee</label>
+                        <input id="monthly_fee" name="monthly_fee" type="text" placeholder="Example: 199.00">
+                    </div>
+                    <div></div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1.2fr 1.2fr;">
+                    <div>
+                        <label for="address_line_1">Address line 1</label>
+                        <input id="address_line_1" name="address_line_1" type="text" placeholder="12 High Street">
+                    </div>
+                    <div>
+                        <label for="address_line_2">Address line 2</label>
+                        <input id="address_line_2" name="address_line_2" type="text" placeholder="Optional">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1fr 1fr 0.8fr;">
+                    <div>
+                        <label for="city">Town / city</label>
+                        <input id="city" name="city" type="text" placeholder="Liverpool">
+                    </div>
+                    <div>
+                        <label for="county">County / region</label>
+                        <input id="county" name="county" type="text" placeholder="Merseyside">
+                    </div>
+                    <div>
+                        <label for="postcode">Postcode</label>
+                        <input id="postcode" name="postcode" type="text" placeholder="L1 1AA">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1.2fr 1.2fr;">
+                    <div>
+                        <label for="billing_address_line_1">Billing address line 1</label>
+                        <input id="billing_address_line_1" name="billing_address_line_1" type="text" placeholder="Leave blank if same as site">
+                    </div>
+                    <div>
+                        <label for="billing_address_line_2">Billing address line 2</label>
+                        <input id="billing_address_line_2" name="billing_address_line_2" type="text" placeholder="Optional">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1fr 1fr 0.8fr;">
+                    <div>
+                        <label for="billing_city">Billing town / city</label>
+                        <input id="billing_city" name="billing_city" type="text" placeholder="Optional">
+                    </div>
+                    <div>
+                        <label for="billing_county">Billing county / region</label>
+                        <input id="billing_county" name="billing_county" type="text" placeholder="Optional">
+                    </div>
+                    <div>
+                        <label for="billing_postcode">Billing postcode</label>
+                        <input id="billing_postcode" name="billing_postcode" type="text" placeholder="Optional">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1.4fr 0.6fr;">
+                    <div>
+                        <label for="site_name">First site name</label>
+                        <input id="site_name" name="site_name" type="text" placeholder="Example: Liverpool City Centre" required>
+                    </div>
+                    <div>
+                        <label for="site_code">Site code</label>
+                        <input id="site_code" name="site_code" type="text" placeholder="LCC">
+                    </div>
+                </div>
+
+                <div class="grid" style="grid-template-columns: 1fr auto; align-items:end;">
+                    <div>
+                        <label for="terminal_name">First terminal name</label>
+                        <input id="terminal_name" name="terminal_name" type="text" placeholder="Example: Front Desk Till" required>
+                    </div>
+                    <div>
+                        <button type="submit">Create Onboarding Pack</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="notes">Business notes</label>
+                    <textarea id="notes" name="notes" rows="4" placeholder="Anything useful for onboarding, billing, support, or account management."></textarea>
+                </div>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>What Happens</h2>
+            <div class="stack muted">
+                <div>1. Salon Max creates the customer business account.</div>
+                <div>2. The first branch/site is created under that business.</div>
+                <div>3. The first till is provisioned and given a pairing code.</div>
+                <div>4. Pair the Raspberry Pi from its Device Setup screen.</div>
+                <div>5. The Pi creates the first staff owner/manager login locally.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Salon Max Login</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            color: #f8fafc;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(34,211,238,0.25), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(245,158,11,0.25), transparent 30%),
+                #06111f;
+        }
+        .card {
+            width: min(460px, calc(100vw - 28px));
+            padding: 30px;
+            border-radius: 24px;
+            background: rgba(15,23,42,0.92);
+            border: 1px solid rgba(255,255,255,0.10);
+            box-shadow: 0 22px 70px rgba(0,0,0,0.35);
+        }
+        .eyebrow { color: #22d3ee; font-weight: 900; text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; }
+        h1 { margin: 10px 0 12px; font-size: 34px; }
+        p { color: #b7c4ff; line-height: 1.5; }
+        label { display: block; margin: 16px 0 8px; color: #cbd5e1; font-weight: 800; }
+        input, button {
+            width: 100%;
+            border-radius: 14px;
+            padding: 13px 14px;
+            font: inherit;
+        }
+        input {
+            color: #f8fafc;
+            background: rgba(15,23,42,0.9);
+            border: 1px solid rgba(255,255,255,0.14);
+        }
+        button {
+            margin-top: 18px;
+            border: 0;
+            color: white;
+            font-weight: 900;
+            background: linear-gradient(135deg, #f59e0b, #0ea5e9);
+        }
+        .notice {
+            margin-top: 16px;
+            border: 1px solid rgba(245,158,11,0.32);
+            background: rgba(245,158,11,0.12);
+            color: #fde68a;
+            border-radius: 14px;
+            padding: 12px;
+            font-weight: 800;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <div class="eyebrow">Provider Console</div>
+        <h1>Salon Max Login</h1>
+        <p>Owner access for managing salon businesses and onboarding.</p>
+        {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+        <form method="post">
+            <label for="username">Username</label>
+            <input id="username" name="username" autocomplete="username" required>
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <button type="submit">Sign in</button>
+        </form>
+    </main>
+</body>
+</html>

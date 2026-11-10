@@ -1,0 +1,202 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Analytics</h2>
+        <div class="muted">Owner-side behaviour and usage view built from synced sales. This is the first layer of the commercial intelligence side of Salon Max: peak times, popular beds, creams/products, and package trends.</div>
+    </div>
+
+    <div class="panel">
+        <form method="get" action="{{ url_for('salonmax_owner_analytics') }}" class="grid" style="grid-template-columns: 1.4fr 0.8fr auto; align-items:end;">
+            <div>
+                <label for="business_account_public_id">Business</label>
+                <select id="business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="days">Days</label>
+                <select id="days" name="days">
+                    <option value="7" {% if snapshot.filters.days == 7 %}selected{% endif %}>7</option>
+                    <option value="30" {% if snapshot.filters.days == 30 %}selected{% endif %}>30</option>
+                    <option value="90" {% if snapshot.filters.days == 90 %}selected{% endif %}>90</option>
+                    <option value="365" {% if snapshot.filters.days == 365 %}selected{% endif %}>365</option>
+                </select>
+            </div>
+            <div>
+                <button type="submit">Refresh Analytics</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Average Sale</div>
+            <div class="metric">GBP {{ "%.2f"|format(snapshot.average_sale_value) }}</div>
+            <div class="muted">{{ snapshot.transaction_count }} synced transaction{{ '' if snapshot.transaction_count == 1 else 's' }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Tanning Sessions</div>
+            <div class="metric">{{ snapshot.tanning_session_count }}</div>
+            <div class="muted">Sales total GBP {{ "%.2f"|format(snapshot.total_sales) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Retail Product Sales</div>
+            <div class="metric">{{ snapshot.retail_sale_count }}</div>
+            <div class="muted">{{ snapshot.retail_units_total }} units sold</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Package Sales</div>
+            <div class="metric">{{ snapshot.package_sale_count }}</div>
+            <div class="muted">Course/package purchases in range</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Peak Hours</h2>
+            {% if snapshot.peak_hour_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Hour</th>
+                        <th>Transactions</th>
+                        <th>Sales</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.peak_hour_rows %}
+                    <tr>
+                        <td>{{ row.hour_label }}</td>
+                        <td>{{ row.transaction_count }}</td>
+                        <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No peak-hour data is available yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Busiest Days</h2>
+            {% if snapshot.weekday_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        <th>Transactions</th>
+                        <th>Sales</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.weekday_rows %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.transaction_count }}</td>
+                        <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No weekday data is available yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Top Sunbeds</h2>
+            {% if snapshot.top_bed_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bed</th>
+                        <th>Sessions</th>
+                        <th>Minutes</th>
+                        <th>Sales</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.top_bed_rows %}
+                    <tr>
+                        <td>{{ row.device_name }}</td>
+                        <td>{{ row.session_count }}</td>
+                        <td>{{ row.minutes_total }}</td>
+                        <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No tanning session data is available yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Top Creams And Products</h2>
+            {% if snapshot.top_product_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Sales</th>
+                        <th>Units</th>
+                        <th>Revenue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.top_product_rows %}
+                    <tr>
+                        <td>{{ row.product_name }}</td>
+                        <td>{{ row.sale_count }}</td>
+                        <td>{{ row.quantity_total }}</td>
+                        <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No retail sales data is available yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Top Packages</h2>
+        {% if snapshot.top_package_rows %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Package</th>
+                    <th>Sales</th>
+                    <th>Minutes Included</th>
+                    <th>Revenue</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.top_package_rows %}
+                <tr>
+                    <td>{{ row.package_name }}</td>
+                    <td>{{ row.sale_count }}</td>
+                    <td>{{ row.minutes_total }}</td>
+                    <td>GBP {{ "%.2f"|format(row.sales_total) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No package sale data is available yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

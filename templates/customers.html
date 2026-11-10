@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid" style="grid-template-columns: 2fr 1fr;">
+    <div class="panel">
+        <h1>Customers</h1>
+        {% if notice %}
+        <div class="panel" style="padding:12px 16px; background:#ecfccb; color:#166534; box-shadow:none; margin-bottom:12px;">
+            {{ notice }}
+        </div>
+        {% endif %}
+        <form method="get" action="{{ url_for('customers') }}" class="row" style="margin-bottom: 16px;">
+            <input type="text" name="q" value="{{ search }}" placeholder="Search by customer no, account no, first or last name" style="flex: 1; min-width: 260px;">
+            <button type="submit">Search</button>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer No</th>
+                    <th>Name</th>
+                    <th>Account No</th>
+                    <th>Balance</th>
+                    <th>Package Minutes</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for customer in customers %}
+                <tr>
+                    <td>{{ customer.customer_number }}</td>
+                    <td>{{ customer.first_name }} {{ customer.last_name }}</td>
+                    <td>{{ customer.account_number or "-" }}</td>
+                    <td>GBP {{ "%.2f"|format(customer.account_balance) }}</td>
+                    <td>{{ customer.package_minutes }}</td>
+                    <td><a href="{{ url_for('customer_detail', customer_id=customer.id) }}">Open</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Create Customer</h2>
+        <form method="post" action="{{ url_for('create_customer') }}" class="stack">
+            <input type="text" name="first_name" placeholder="First name" required>
+            <input type="text" name="last_name" placeholder="Last name" required>
+            <input type="text" name="account_number" placeholder="Account number">
+            <input type="text" name="phone" placeholder="Phone">
+            <input type="email" name="email" placeholder="Email">
+            <button type="submit">Create Customer</button>
+        </form>
+
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #d7e3ee;">
+
+        <h2>Import Ivy Customers</h2>
+        <div class="muted" style="margin-bottom:12px;">
+            Paste the Ivy customer export here. The importer reads card number, name, surname, normal balance, and tanning course minutes.
+        </div>
+        <form method="post" action="{{ url_for('import_ivy_customers') }}" class="stack">
+            <textarea name="ivy_export_text" rows="14" placeholder="Paste Ivy export rows here" required></textarea>
+            <button type="submit">Import Ivy Data</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

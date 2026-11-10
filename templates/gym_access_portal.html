@@ -1,0 +1,545 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Salon Max Access</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='gym_access/styles.css') }}">
+  </head>
+  <body data-surface="{{ surface or 'all' }}" data-business-id="{{ snapshot.business_account_public_id }}">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">SM</span>
+        <div>
+          <strong>Salon Max Access</strong>
+          <small>Memberships, payments, entry</small>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Primary">
+        <button class="nav-button is-active" data-view="customer">Customer portal</button>
+        <button class="nav-button" data-view="reception">Reception check-in</button>
+        <button class="nav-button" data-view="staff">Gym staff</button>
+        <button class="nav-button" data-view="owner">Salon Max admin</button>
+      </nav>
+
+      <div class="tenant-picker">
+        <label for="tenantSelect">Viewing gym</label>
+        <select id="tenantSelect"></select>
+      </div>
+
+      <div class="system-card">
+        <span class="status-dot" id="systemDot"></span>
+        <div>
+          <strong id="systemStatus">Operational</strong>
+          <small id="systemHint">Door API ready</small>
+        </div>
+      </div>
+    </aside>
+
+    <main>
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Multi-tenant SaaS prototype</p>
+          <h1 id="pageTitle">Customer portal</h1>
+        </div>
+        <button class="ghost-button" id="resetDemo">Reset demo data</button>
+      </section>
+
+      <section id="suspendedBanner" class="banner hidden">
+        <strong>This gym account is suspended.</strong>
+        Member signup, staff actions, and door entry are blocked until the Salon Max subscription is restored.
+      </section>
+
+      {% if surface in ["staff", "reception", "all"] %}
+      <section class="staff-security-panel">
+        <div>
+          <strong>Staff area protected</strong>
+          <span>Signed in to {{ snapshot.brand_name }} staff tools.</span>
+        </div>
+        <details>
+          <summary>Change staff password</summary>
+          <form method="post" action="{{ url_for('salonmax_gym_staff_change_password', business_account_public_id=snapshot.business_account_public_id) }}" class="staff-password-form">
+            <label>
+              Current password
+              <input type="password" name="current_password" required autocomplete="current-password">
+            </label>
+            <label>
+              New password
+              <input type="password" name="new_password" required minlength="8" autocomplete="new-password">
+            </label>
+            <label>
+              Confirm new password
+              <input type="password" name="confirm_password" required minlength="8" autocomplete="new-password">
+            </label>
+            <button class="secondary-button" type="submit">Update password</button>
+          </form>
+        </details>
+        <a class="ghost-button" href="{{ url_for('salonmax_gym_staff_logout', business_account_public_id=snapshot.business_account_public_id) }}">Sign out</a>
+      </section>
+      {% endif %}
+
+      {% if notice %}
+      <section class="decision neutral">{{ notice }}</section>
+      {% endif %}
+
+      <section id="customerView" class="view is-active">
+        <section class="signup-step is-active" data-step="welcome">
+          <section class="customer-hero" id="customerHero">
+            <button class="secondary-button hero-top-login" type="button" data-step-target="account" data-login-entry="true">Member login</button>
+            <div class="hero-copy">
+              <p class="hero-kicker" id="publicBrandLabel">KADO FITNESS</p>
+              <h2 id="publicHeroTitle">Join KADO Fitness</h2>
+              <p id="publicHeroTagline">Women-only functional fitness with no booking and no contract.</p>
+              <div class="hero-badges">
+                <span>No need to book</span>
+              <span>No contract</span>
+              <span>Women only</span>
+            </div>
+              <div class="hero-actions">
+                <button class="primary-button hero-join-button" type="button" data-step-target="create">Join now</button>
+              </div>
+            </div>
+            <div class="hero-price-card">
+              <span>Membership</span>
+              <strong id="heroMembershipPrice">Â£30</strong>
+              <small id="heroClassPrice">Pay per class Â£7</small>
+            </div>
+          </section>
+
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Choose your way in</p>
+                <h2>Popular packages</h2>
+              </div>
+            </div>
+            <div id="publicPlanCatalog" class="plan-catalog"></div>
+          </div>
+        </section>
+
+        <section class="signup-step" data-step="create">
+          <div class="panel signup-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Step 1</p>
+                <h2>Create your member account</h2>
+              </div>
+              <button class="ghost-button" type="button" data-step-target="welcome">Back</button>
+            </div>
+            <form id="signupForm" class="form-grid">
+              <label>
+                Member name
+                <input id="memberName" required placeholder="Alex Carter">
+              </label>
+              <label>
+                Member email
+                <input id="memberEmail" type="email" required placeholder="alex@example.com">
+              </label>
+              <label>
+                Create password
+                <input id="memberPassword" type="password" required minlength="6" placeholder="Minimum 6 characters">
+              </label>
+              <button class="primary-button" type="submit" id="payButton">Create account</button>
+            </form>
+            <div id="signupConfirmation" class="confirmation-card hidden"></div>
+            <div class="payment-note">
+              <strong>Next:</strong>
+              Once your account is created, choose a membership or class package and pay the gym directly.
+            </div>
+          </div>
+        </section>
+
+        <section class="signup-step" data-step="packages">
+          <div class="panel signup-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Step 2</p>
+                <h2>Buy a membership or class package</h2>
+              </div>
+              <button class="ghost-button" type="button" data-step-target="create">Back</button>
+            </div>
+            <div id="packageChoiceList" class="package-choice-list"></div>
+            <div id="packagePurchaseMessage" class="confirmation-card hidden"></div>
+            <div class="payment-note">
+              <strong>Payment model:</strong>
+              In production this opens the gym's own Stripe checkout. Salon Max does not handle the member's money.
+            </div>
+          </div>
+        </section>
+
+        <section class="signup-step" data-step="checkout">
+          <div class="panel signup-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Checkout</p>
+                <h2>Complete payment</h2>
+              </div>
+              <button class="ghost-button" type="button" id="checkoutBackButton">Back</button>
+            </div>
+            <div id="checkoutSummary" class="checkout-summary"></div>
+            <form id="checkoutForm" class="form-grid">
+              <label>
+                Cardholder name
+                <input id="checkoutName" required placeholder="Alex Carter">
+              </label>
+              <label>
+                Card number
+                <input id="checkoutCard" required inputmode="numeric" placeholder="4242 4242 4242 4242">
+              </label>
+              <label>
+                Expiry
+                <input id="checkoutExpiry" required placeholder="12/30">
+              </label>
+              <label>
+                CVC
+                <input id="checkoutCvc" required inputmode="numeric" placeholder="123">
+              </label>
+              <button class="primary-button" type="submit">Pay now</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="signup-step" data-step="account">
+          <div class="split-layout">
+            <div class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Member page</p>
+                  <h2>Your account</h2>
+                </div>
+                <button class="ghost-button" type="button" data-step-target="welcome">Home</button>
+              </div>
+              <div class="inline-form member-login-form" id="memberLoginForm">
+                <label>
+                  Email
+                  <input id="accountEmail" type="email" placeholder="alex@example.com">
+                </label>
+                <label>
+                  Password
+                  <input id="accountPassword" type="password" placeholder="Your password">
+                </label>
+                <button class="primary-button" type="button" id="memberLoginButton">Log in</button>
+              </div>
+              <div class="member-session-actions hidden" id="memberSessionActions">
+                <button class="secondary-button" type="button" data-member-tab="buy">Buy additional class</button>
+                <button class="ghost-button" type="button" id="memberLogoutButton">Log out</button>
+              </div>
+              <div id="accountSummary" class="account-summary empty-state">
+                Members can log in to view their PIN, purchases, attendance, and buy another class.
+              </div>
+              <div id="memberTabs" class="member-tabs hidden">
+                <button class="secondary-button is-active" type="button" data-member-tab="overview">Personal details</button>
+                <button class="secondary-button" type="button" data-member-tab="buy">Buy class</button>
+              </div>
+              <div id="memberBuyPanel" class="member-buy-panel hidden">
+                <h3>Buy a new class or membership</h3>
+                <div id="memberBuyClassList" class="package-choice-list"></div>
+              </div>
+            </div>
+
+            <div class="panel accent-panel">
+              <p class="eyebrow">Latest signup</p>
+              <h2 id="latestMemberTitle">No new member yet</h2>
+              <div id="latestMemberCard" class="member-pass empty-state">
+                Create a member account, then buy a membership or class package.
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="staffView" class="view">
+        <div class="stats-grid">
+          <div class="stat"><small>Active members</small><strong id="activeMembers">0</strong></div>
+          <div class="stat"><small>Monthly revenue</small><strong id="monthlyRevenue">Â£0</strong></div>
+          <div class="stat"><small>Access attempts</small><strong id="accessAttempts">0</strong></div>
+          <div class="stat"><small>Attendances</small><strong id="attendanceCount">0</strong></div>
+          <div class="stat"><small>Stripe status</small><strong id="stripeStatus">Not connected</strong></div>
+        </div>
+
+        <div class="staff-tabs">
+          <button class="secondary-button is-active" type="button" data-staff-tab="members">Members</button>
+          <button class="secondary-button" type="button" data-staff-tab="door">Door access</button>
+          <button class="secondary-button" type="button" data-staff-tab="analytics">Analytics</button>
+          <button class="secondary-button" type="button" data-staff-tab="finance">Finance</button>
+          <button class="secondary-button" type="button" data-staff-tab="marketing">Marketing</button>
+          <button class="secondary-button" type="button" data-staff-tab="classes">Classes</button>
+        </div>
+
+        <div class="staff-tab-panel is-active" data-staff-panel="members">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Gym staff</p>
+                <h2>Members</h2>
+              </div>
+              <button class="secondary-button" id="connectStripe">Connect Stripe</button>
+            </div>
+            <div class="member-groups">
+              <section>
+                <h3>Customer list</h3>
+                <div id="activeMemberList" class="table-list"></div>
+              </section>
+              <section class="hidden">
+                <h3>Expired / revoked members</h3>
+                <div id="expiredMemberList" class="table-list"></div>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <div class="staff-tab-panel" data-staff-panel="door">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Manual override</p>
+                <h2>Door simulator</h2>
+              </div>
+            </div>
+            <div class="inline-form compact">
+              <label>
+                Credential
+                <input id="staffCredential" placeholder="PIN">
+              </label>
+              <label>
+                Attending
+                <select id="staffVisitSelect"></select>
+              </label>
+              <button class="secondary-button" id="staffDoorCheck">Run check</button>
+            </div>
+            <div id="staffDoorResult" class="decision neutral">No scan yet.</div>
+            <h3>Access log</h3>
+            <div id="accessLog" class="log-list"></div>
+          </div>
+        </div>
+
+        <div class="staff-tab-panel" data-staff-panel="analytics">
+          <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Attendance analytics</p>
+              <h2>Class usage and busy times</h2>
+            </div>
+            <span class="pill">Built from access logs</span>
+          </div>
+          <div id="attendanceAnalytics" class="analytics-grid"></div>
+          </div>
+        </div>
+
+        <div class="staff-tab-panel" data-staff-panel="finance">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Business suite</p>
+                <h2>Payments, unpaid members, and class revenue</h2>
+              </div>
+              <span class="pill">Gym money stays with the gym</span>
+            </div>
+            <div id="financeSummary" class="finance-summary-grid"></div>
+            <div class="finance-grid">
+              <section>
+                <h3>Revenue by class</h3>
+                <div id="classRevenueList" class="finance-list"></div>
+              </section>
+              <section>
+                <h3>Unpaid / needs attention</h3>
+                <div id="unpaidMemberList" class="finance-list"></div>
+              </section>
+            </div>
+            <h3>Payment ledger</h3>
+            <div id="paymentLedger" class="finance-list"></div>
+          </div>
+        </div>
+
+        <div class="staff-tab-panel" data-staff-panel="marketing">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Member marketing</p>
+                <h2>Offers and filtered email lists</h2>
+              </div>
+              <span class="pill">Preview before sending</span>
+            </div>
+            <div class="marketing-builder">
+              <div class="marketing-filters">
+                <label>
+                  Audience
+                  <select id="marketingStatusFilter">
+                    <option value="expired">Expired members</option>
+                    <option value="expires_14">Expiring in next 14 days</option>
+                    <option value="active">Active members</option>
+                    <option value="paused">Paused members</option>
+                    <option value="revoked">Revoked members</option>
+                    <option value="no_package">No package bought</option>
+                    <option value="all">All members</option>
+                  </select>
+                </label>
+                <label>
+                  Email consent
+                  <select id="marketingConsentFilter">
+                    <option value="email_consent">Email consent only</option>
+                    <option value="all_with_email">Anyone with an email</option>
+                    <option value="no_consent">No email consent recorded</option>
+                  </select>
+                </label>
+                <label>
+                  Package / class
+                  <select id="marketingPackageFilter"></select>
+                </label>
+                <label>
+                  Search
+                  <input id="marketingSearch" placeholder="Name, email, phone, notes">
+                </label>
+                <label class="marketing-offer-field">
+                  Offer
+                  <input id="marketingOffer" value="Come back this week and get your first class back for GBP 5">
+                </label>
+                <div class="marketing-actions">
+                  <button class="primary-button" type="button" id="marketingBuildCampaign">Build preview</button>
+                  <button class="secondary-button" type="button" id="marketingCopyEmails">Copy emails</button>
+                  <button class="secondary-button" type="button" id="marketingCopyMessage">Copy message</button>
+                </div>
+              </div>
+              <div class="marketing-copy-panel">
+                <label>
+                  Email subject
+                  <input id="marketingSubject">
+                </label>
+                <label>
+                  Email message
+                  <textarea id="marketingBody"></textarea>
+                </label>
+                <div id="marketingCopyStatus" class="decision neutral">Build a preview before sending anything.</div>
+              </div>
+            </div>
+            <div class="panel-heading compact-heading">
+              <div>
+                <h3>Recipients</h3>
+                <span id="marketingRecipientCount" class="row-meta">0 matched</span>
+              </div>
+            </div>
+            <div id="marketingPreview" class="marketing-preview"></div>
+          </div>
+        </div>
+
+        <div class="staff-tab-panel" data-staff-panel="classes">
+          <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Class catalogue</p>
+              <h2>Classes and package prices</h2>
+            </div>
+            <span class="pill">Controlled by gym staff</span>
+          </div>
+          <form id="classPackageForm" class="class-package-form">
+            <label>
+              Class name
+              <input id="newClassName" required placeholder="Bootcamp">
+            </label>
+            <label>
+              Package price
+              <input id="newClassPrice" type="number" min="0" step="1" required placeholder="18">
+            </label>
+            <label>
+              Package length
+              <select id="newClassDurationWeeks">
+                <option value="1">1 week</option>
+                <option value="4" selected>4 weeks</option>
+                <option value="6">6 weeks</option>
+                <option value="8">8 weeks</option>
+                <option value="12">12 weeks</option>
+              </select>
+            </label>
+            <fieldset class="session-builder">
+              <legend>Weekly sessions</legend>
+              <div class="day-checks">
+                <label><input type="checkbox" value="1" name="classDays"> Mon</label>
+                <label><input type="checkbox" value="2" name="classDays"> Tue</label>
+                <label><input type="checkbox" value="3" name="classDays"> Wed</label>
+                <label><input type="checkbox" value="4" name="classDays"> Thu</label>
+                <label><input type="checkbox" value="5" name="classDays"> Fri</label>
+                <label><input type="checkbox" value="6" name="classDays"> Sat</label>
+                <label><input type="checkbox" value="0" name="classDays"> Sun</label>
+              </div>
+              <div class="session-time-row">
+                <label>
+                  Start time
+                  <input id="newSessionTime" type="time" value="18:30">
+                </label>
+                <label>
+                  Duration
+                  <input id="newSessionDuration" type="number" min="15" step="15" value="60">
+                </label>
+                <button class="secondary-button" id="addSessionSlot" type="button">Add session times</button>
+              </div>
+              <div id="sessionPreview" class="session-preview empty-state">No sessions added yet.</div>
+            </fieldset>
+            <button class="primary-button" type="submit">Add class package</button>
+          </form>
+          <div id="pricingList" class="pricing-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="receptionView" class="view">
+        <div class="kiosk-shell">
+          <div class="kiosk-main">
+            <div class="kiosk-brand">
+              <div class="kiosk-logo" id="kioskGymName">KADO Fitness</div>
+              <p>Enter your member PIN to check in</p>
+            </div>
+            <label class="kiosk-class-select">
+              <span>Class / access</span>
+              <select id="kioskVisitSelect"></select>
+            </label>
+            <div class="pin-display" id="kioskPinDisplay" aria-live="polite">Enter PIN</div>
+            <div class="keypad" aria-label="PIN keypad">
+              <button class="keypad-key" data-key="1">1</button>
+              <button class="keypad-key" data-key="2">2</button>
+              <button class="keypad-key" data-key="3">3</button>
+              <button class="keypad-key" data-key="4">4</button>
+              <button class="keypad-key" data-key="5">5</button>
+              <button class="keypad-key" data-key="6">6</button>
+              <button class="keypad-key" data-key="7">7</button>
+              <button class="keypad-key" data-key="8">8</button>
+              <button class="keypad-key" data-key="9">9</button>
+              <button class="keypad-key utility" data-key="clear">Clear</button>
+              <button class="keypad-key" data-key="0">0</button>
+              <button class="keypad-key utility" data-key="back">Back</button>
+            </div>
+            <button class="primary-button kiosk-submit" id="kioskSubmit">Check in</button>
+          </div>
+
+          <div class="kiosk-result neutral" id="kioskResult">
+            <strong>Ready for member PIN</strong>
+            <span>Staff can leave this screen open on an iPad at reception.</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="ownerView" class="view">
+        <div class="stats-grid">
+          <div class="stat"><small>Gyms sold to</small><strong id="tenantCount">0</strong></div>
+          <div class="stat"><small>Salon Max MRR</small><strong id="ownerMrr">Â£0</strong></div>
+          <div class="stat"><small>Suspended accounts</small><strong id="suspendedCount">0</strong></div>
+          <div class="stat"><small>Total members served</small><strong id="totalMembers">0</strong></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Salon Max admin</p>
+              <h2>Gym accounts</h2>
+            </div>
+            <button class="primary-button" id="addTenant">Add demo gym</button>
+          </div>
+          <div id="tenantList" class="tenant-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='gym_access/app.js') }}"></script>
+  </body>
+</html>
+

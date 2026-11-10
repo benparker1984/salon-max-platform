@@ -1,0 +1,788 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="panel"><a class="button" href="{{ url_for('business_detail', public_id=snapshot.business_account_public_id) }}">Commissioning, salon logo and sunbed pictures</a></div>
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+    {% if pairing_code %}
+    <div class="panel">
+        <h2>Terminal Onboarding Pack</h2>
+        <div class="grid" style="grid-template-columns: 0.85fr 1.15fr; gap:18px; align-items:start;">
+            <div>
+                <div class="muted">Pairing code</div>
+                <div class="metric">{{ pairing_code }}</div>
+            </div>
+            <div class="stack muted">
+                <div>1. Power up the salon Pi and wait for the Device Setup screen.</div>
+                <div>2. Enter pairing code <strong>{{ pairing_code }}</strong>.</div>
+                <div>3. The Pi will then show <strong>Create First Staff Login</strong>.</div>
+                <div>4. Create the salon's first owner or manager PIN on the Pi.</div>
+                <div>5. The till will return to that salon's branded staff login screen.</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Provider Overview</h2>
+        <div class="muted">This view is for Salon Max ownership and support staff, not salon operators. It should answer questions like which customer business is healthy, which terminals are stale, and whether sync or licensing needs intervention.</div>
+        <div class="row" style="margin-top:14px;">
+            <a href="{{ url_for('salonmax_owner_console') }}" style="text-decoration:none; color:#dbeafe; font-weight:600;">Back to business accounts</a>
+            <span class="tag neutral">{{ snapshot.subscription_plan|title }}</span>
+            <span class="tag {% if snapshot.subscription_status != 'active' %}warning{% endif %}">{{ snapshot.subscription_status|title }}</span>
+            <span class="tag {% if snapshot.onboarding_steps.first_staff_created %}{% elif snapshot.onboarding_steps.paired %}warning{% else %}neutral{% endif %}">
+                {% if snapshot.onboarding_steps.first_staff_created %}Ready To Trade{% elif snapshot.onboarding_steps.paired %}Awaiting First Staff{% elif snapshot.onboarding_steps.terminal_provisioned %}Awaiting Pairing{% else %}Onboarding In Progress{% endif %}
+            </span>
+            {% if snapshot.is_local_dev_business %}
+            <span class="tag warning">Local prototype tenant</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Business Details</h2>
+        <div class="muted" style="margin-bottom:12px;">Edit the salon company's own details here. This is separate from branch/site names further down the page.</div>
+        <form method="post" action="{{ url_for('salonmax_update_business', business_account_public_id=snapshot.business_account_public_id) }}" class="stack">
+            <div class="grid" style="grid-template-columns: 1.5fr 0.9fr 0.9fr 0.9fr;">
+                <div>
+                    <label for="business_name">Business name</label>
+                    <input id="business_name" name="business_name" type="text" value="{{ snapshot.business_name }}" required>
+                </div>
+                <div>
+                    <label for="subscription_plan">Plan</label>
+                    <select id="subscription_plan" name="subscription_plan">
+                        <option value="pilot" {% if snapshot.subscription_plan == 'pilot' %}selected{% endif %}>Pilot</option>
+                        <option value="standard" {% if snapshot.subscription_plan == 'standard' %}selected{% endif %}>Standard</option>
+                        <option value="multi_site" {% if snapshot.subscription_plan == 'multi_site' %}selected{% endif %}>Multi Site</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="subscription_status">Subscription</label>
+                    <select id="subscription_status" name="subscription_status">
+                        <option value="active" {% if snapshot.subscription_status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="trial" {% if snapshot.subscription_status == 'trial' %}selected{% endif %}>Trial</option>
+                        <option value="paused" {% if snapshot.subscription_status == 'paused' %}selected{% endif %}>Paused</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="status">Account status</label>
+                    <select id="status" name="status">
+                        <option value="active" {% if snapshot.status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="suspended" {% if snapshot.status == 'suspended' %}selected{% endif %}>Suspended</option>
+                        <option value="paused" {% if snapshot.status == 'paused' %}selected{% endif %}>Paused</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                <div>
+                    <label for="contact_name">Primary contact name</label>
+                    <input id="contact_name" name="contact_name" type="text" value="{{ snapshot.contact_name }}">
+                </div>
+                <div>
+                    <label for="contact_email">Contact email</label>
+                    <input id="contact_email" name="contact_email" type="email" value="{{ snapshot.contact_email }}">
+                </div>
+                <div>
+                    <label for="contact_phone">Contact phone</label>
+                    <input id="contact_phone" name="contact_phone" type="text" value="{{ snapshot.contact_phone }}">
+                </div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                <div>
+                    <label for="billing_email">Billing email</label>
+                    <input id="billing_email" name="billing_email" type="email" value="{{ snapshot.billing_email }}">
+                </div>
+                <div>
+                    <label for="company_number">Company number</label>
+                    <input id="company_number" name="company_number" type="text" value="{{ snapshot.company_number }}">
+                </div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                <div>
+                    <label for="vat_number">VAT number</label>
+                    <input id="vat_number" name="vat_number" type="text" value="{{ snapshot.vat_number }}">
+                </div>
+                <div>
+                    <label for="contract_start_date">Contract start date</label>
+                    <input id="contract_start_date" name="contract_start_date" type="date" value="{{ snapshot.contract_start_date }}">
+                </div>
+                <div>
+                    <label for="renewal_date">Renewal date</label>
+                    <input id="renewal_date" name="renewal_date" type="date" value="{{ snapshot.renewal_date }}">
+                </div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 0.8fr 1.2fr;">
+                <div>
+                    <label for="monthly_fee">Monthly fee</label>
+                    <input id="monthly_fee" name="monthly_fee" type="text" value="{{ snapshot.monthly_fee }}">
+                </div>
+                <div></div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1.1fr 1.1fr;">
+                <div>
+                    <label for="address_line_1">Address line 1</label>
+                    <input id="address_line_1" name="address_line_1" type="text" value="{{ snapshot.address_line_1 }}">
+                </div>
+                <div>
+                    <label for="address_line_2">Address line 2</label>
+                    <input id="address_line_2" name="address_line_2" type="text" value="{{ snapshot.address_line_2 }}">
+                </div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1fr 1fr 0.8fr auto; align-items:end;">
+                <div>
+                    <label for="city">Town / city</label>
+                    <input id="city" name="city" type="text" value="{{ snapshot.city }}">
+                </div>
+                <div>
+                    <label for="county">County / region</label>
+                    <input id="county" name="county" type="text" value="{{ snapshot.county }}">
+                </div>
+                <div>
+                    <label for="postcode">Postcode</label>
+                    <input id="postcode" name="postcode" type="text" value="{{ snapshot.postcode }}">
+                </div>
+                <div>
+                    <button type="submit">Save Business</button>
+                </div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1.1fr 1.1fr;">
+                <div>
+                    <label for="billing_address_line_1">Billing address line 1</label>
+                    <input id="billing_address_line_1" name="billing_address_line_1" type="text" value="{{ snapshot.billing_address_line_1 }}">
+                </div>
+                <div>
+                    <label for="billing_address_line_2">Billing address line 2</label>
+                    <input id="billing_address_line_2" name="billing_address_line_2" type="text" value="{{ snapshot.billing_address_line_2 }}">
+                </div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1fr 1fr 0.8fr;">
+                <div>
+                    <label for="billing_city">Billing town / city</label>
+                    <input id="billing_city" name="billing_city" type="text" value="{{ snapshot.billing_city }}">
+                </div>
+                <div>
+                    <label for="billing_county">Billing county / region</label>
+                    <input id="billing_county" name="billing_county" type="text" value="{{ snapshot.billing_county }}">
+                </div>
+                <div>
+                    <label for="billing_postcode">Billing postcode</label>
+                    <input id="billing_postcode" name="billing_postcode" type="text" value="{{ snapshot.billing_postcode }}">
+                </div>
+            </div>
+
+            <div>
+                <label for="notes">Business notes</label>
+                <textarea id="notes" name="notes" rows="4" placeholder="Internal notes for onboarding, billing, support, or account management.">{{ snapshot.notes }}</textarea>
+            </div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>Back Office Ownership</h2>
+        <div class="muted" style="margin-bottom:12px;">Each salon business gets its own isolated back-office tenant. Sites and terminals underneath this screen belong to this tenant only, which is what keeps one salon's estate separate from another.</div>
+        <div class="grid cards">
+            <div class="panel">
+                <div class="muted">Business Account ID</div>
+                <div class="metric" style="font-size:20px;">{{ snapshot.business_account_public_id }}</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Back Office Tenant</div>
+                <div class="metric" style="font-size:20px;">{{ snapshot.backoffice_tenant_id }}</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Tenant Scope</div>
+                <div class="metric" style="font-size:18px;">{{ snapshot.backoffice_scope_summary }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Onboarding Tracker</h2>
+        <div class="grid cards">
+            <div class="panel">
+                <div class="muted">Business Created</div>
+                <div class="metric" style="font-size:22px;">{% if snapshot.onboarding_steps.business_created %}Yes{% else %}No{% endif %}</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Site Added</div>
+                <div class="metric" style="font-size:22px;">{% if snapshot.onboarding_steps.site_added %}Yes{% else %}No{% endif %}</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Terminal Provisioned</div>
+                <div class="metric" style="font-size:22px;">{% if snapshot.onboarding_steps.terminal_provisioned %}Yes{% else %}No{% endif %}</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Pi Paired</div>
+                <div class="metric" style="font-size:22px;">{% if snapshot.onboarding_steps.paired %}Yes{% else %}No{% endif %}</div>
+            </div>
+            <div class="panel">
+                <div class="muted">First Staff Created</div>
+                <div class="metric" style="font-size:22px;">{% if snapshot.onboarding_steps.first_staff_created %}Yes{% else %}No{% endif %}</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Ready Terminals</div>
+                <div class="metric" style="font-size:22px;">{{ snapshot.ready_terminal_count }} / {{ snapshot.terminal_count }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Add Site</h2>
+            <div class="muted" style="margin-bottom:12px;">Use this when signing up a new branch for this salon business.</div>
+            <form method="post" action="{{ url_for('salonmax_create_business_site', business_account_public_id=snapshot.business_account_public_id) }}" class="grid" style="grid-template-columns: 1.5fr 0.8fr auto; align-items:end;">
+                <div>
+                    <label for="site_name">Site name</label>
+                    <input id="site_name" name="site_name" type="text" placeholder="Example: Manchester City Centre" required>
+                </div>
+                <div>
+                    <label for="site_code">Site code</label>
+                    <input id="site_code" name="site_code" type="text" placeholder="MCC">
+                </div>
+                <div>
+                    <button type="submit">Add Site</button>
+                </div>
+            </form>
+        </div>
+        <div class="panel">
+            <h2>Add Terminal</h2>
+            <div class="muted" style="margin-bottom:12px;">Create tills here before shipping or pairing a Raspberry Pi. This gives the team a friendly onboarding path instead of code edits.</div>
+            <form method="post" action="{{ url_for('salonmax_create_terminal', business_account_public_id=snapshot.business_account_public_id) }}" class="grid" style="grid-template-columns: 1fr 1.3fr auto; align-items:end;">
+                <div>
+                    <label for="site_public_id">Site</label>
+                    <select id="site_public_id" name="site_public_id" required>
+                        {% for site in snapshot.sites %}
+                        {% if site.status == 'active' %}
+                        <option value="{{ site.site_public_id }}">{{ site.name }} ({{ site.code }})</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="terminal_name">Terminal name</label>
+                    <input id="terminal_name" name="terminal_name" type="text" placeholder="Example: Front Desk Till" required>
+                </div>
+                <div>
+                    <button type="submit">Add Terminal</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if snapshot.stale_licence_count or snapshot.expiring_licence_count or snapshot.missing_terminal_count %}
+    <div class="grid cards">
+        {% if snapshot.stale_licence_count %}
+        <div class="alert warning">
+            {{ snapshot.stale_licence_count }} terminal{% if snapshot.stale_licence_count != 1 %}s{% endif %} have stale check-ins.
+        </div>
+        {% endif %}
+        {% if snapshot.expiring_licence_count %}
+        <div class="alert danger">
+            {{ snapshot.expiring_licence_count }} licence{% if snapshot.expiring_licence_count != 1 %}s{% endif %} need attention soon.
+        </div>
+        {% endif %}
+        {% if snapshot.missing_terminal_count %}
+        <div class="alert warning">
+            {{ snapshot.missing_terminal_count }} configured terminal{% if snapshot.missing_terminal_count != 1 %}s{% endif %} still have no cloud licence.
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Platform</div>
+            <div class="metric">{{ snapshot.platform_name }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Customer Business</div>
+            <div class="metric" style="font-size:24px;">{{ snapshot.business_name }}</div>
+            <div class="muted">{{ snapshot.business_account_public_id }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Sites</div>
+            <div class="metric">{{ snapshot.site_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Terminals</div>
+            <div class="metric">{{ snapshot.terminal_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Bed Devices</div>
+            <div class="metric">{{ snapshot.device_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Active Licences</div>
+            <div class="metric">{{ snapshot.active_licence_count }}</div>
+            <div class="muted">{{ snapshot.licence_count }} total</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Sync Events</div>
+            <div class="metric">{{ snapshot.sync_event_count }}</div>
+            <div class="muted">{{ snapshot.sync_event_count_24h }} in last 24h</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Latest Check-In</div>
+            <div class="metric" style="font-size:20px;">{{ snapshot.last_check_in_at|localdt or "None yet" }}</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1.1fr 0.9fr;">
+        <div class="panel">
+            <h2>Business Sites</h2>
+            <div class="muted" style="margin-bottom:12px;">This is the customer estate under the selected Salon Max business account.</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Site</th>
+                        <th>Code</th>
+                        <th>Status</th>
+                        <th>Terminals</th>
+                        <th>Beds</th>
+                        <th>Sync Events</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for site in snapshot.sites %}
+                    <tr>
+                        <td>
+                            <input form="save-site-{{ site.site_public_id }}" name="site_name" type="text" value="{{ site.name }}" required>
+                        </td>
+                        <td>
+                            <input form="save-site-{{ site.site_public_id }}" name="site_code" type="text" value="{{ site.code }}" required>
+                        </td>
+                        <td>
+                            <span class="tag {% if site.status != 'active' %}warning{% endif %}">{{ site.status|replace('_', ' ')|title }}</span>
+                        </td>
+                        <td>{{ site.terminal_count }}</td>
+                        <td>{{ site.device_count }}</td>
+                        <td>{{ site.sync_event_count }}</td>
+                        <td>
+                            <div class="stack">
+                                <form id="save-site-{{ site.site_public_id }}" method="post" action="{{ url_for('salonmax_update_business_site', business_account_public_id=snapshot.business_account_public_id, site_public_id=site.site_public_id) }}">
+                                    <button type="submit">Save</button>
+                                </form>
+                                <form method="post" action="{{ url_for('salonmax_suspend_business_site', business_account_public_id=snapshot.business_account_public_id, site_public_id=site.site_public_id) }}">
+                                    <button type="submit">{{ 'Reactivate' if site.status == 'suspended' else 'Suspend' }}</button>
+                                </form>
+                                <form method="post" action="{{ url_for('salonmax_delete_business_site', business_account_public_id=snapshot.business_account_public_id, site_public_id=site.site_public_id) }}">
+                                    <button type="submit">Archive Site</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="panel">
+            <h2>Unlicensed Terminals</h2>
+            {% if snapshot.missing_terminal_ids %}
+            <div class="muted" style="margin-bottom:12px;">These tills exist locally but have not checked in to Salon Max cloud yet.</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Terminal Device ID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for terminal_id in snapshot.missing_terminal_ids %}
+                    <tr>
+                        <td>{{ terminal_id }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">All known terminals have a cloud licence record.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if snapshot.archived_sites %}
+    <div class="panel">
+        <h2>Archived Sites</h2>
+        <div class="muted" style="margin-bottom:12px;">Archived sites are hidden from the live estate but kept for record and recovery. Restoring brings the site back as suspended so you can review it before reactivating.</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Site</th>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th>Retired Terminals</th>
+                    <th>Archived</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for site in snapshot.archived_sites %}
+                <tr>
+                    <td>{{ site.name }}</td>
+                    <td>{{ site.code }}</td>
+                    <td><span class="tag warning">Archived</span></td>
+                    <td>{{ site.archived_terminal_count }}</td>
+                    <td>{{ site.updated_at|localdt or "Unknown" }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('salonmax_restore_business_site', business_account_public_id=snapshot.business_account_public_id, site_public_id=site.site_public_id) }}">
+                            <button type="submit">Restore Site</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Customer Import</h2>
+        <div class="muted" style="margin-bottom:12px;">Use this for onboarding and migration only. Paste a CSV with customer details, balances, and minutes, and Salon Max will import the list into this salon business and sync it down to the paired till.</div>
+        <div class="alert warning" style="margin-bottom:12px;">
+            Import guidance:
+            Customer number, account number, phone, or email should be included where possible so Salon Max can match and update the right customer cleanly.
+            Invalid balances/minutes are defaulted safely and reported back in the import notice.
+        </div>
+        <form method="post" action="{{ url_for('salonmax_import_business_customers', business_account_public_id=snapshot.business_account_public_id) }}" class="stack">
+            <div class="grid" style="grid-template-columns: 0.8fr 1.2fr;">
+                <div>
+                    <label for="import-author-name">Support staff</label>
+                    <input id="import-author-name" name="author_name" type="text" placeholder="Example: Ben">
+                </div>
+                <div class="muted" style="align-self:end;">Accepted headers include: <code>first_name,last_name,customer_number,account_number,phone,email,balance,minutes,notes</code></div>
+            </div>
+            <div>
+                <label for="csv-text">CSV data</label>
+                <textarea id="csv-text" name="csv_text" rows="8" placeholder="first_name,last_name,customer_number,account_number,phone,email,balance,minutes,notes&#10;Jane,Doe,1001,A-1001,07123456789,jane@example.com,12.50,30,Imported from previous system"></textarea>
+            </div>
+            <div class="row">
+                <button type="submit">Import Customers</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>Customer Ledger Inspection</h2>
+        <div class="muted" style="margin-bottom:12px;">Known cloud customers for this salon business. Open a customer to inspect their minute ledger and any money-ledger history recorded in Salon Max cloud.</div>
+        {% if snapshot.customers %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Minutes</th>
+                    <th>Balance</th>
+                    <th>Contact</th>
+                    <th>Status</th>
+                    <th>Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for customer in snapshot.customers %}
+                <tr>
+                    <td>
+                        <div><strong>{{ customer.full_name }}</strong></div>
+                        <div class="muted">{{ customer.customer_number or customer.customer_public_id }}</div>
+                    </td>
+                    <td>{{ customer.minutes_available }}</td>
+                    <td>GBP {{ customer.current_balance }}</td>
+                    <td>
+                        <div>{{ customer.phone or "-" }}</div>
+                        <div class="muted">{{ customer.email or "-" }}</div>
+                    </td>
+                    <td>
+                        <span class="tag {% if customer.status != 'active' %}warning{% endif %}">
+                            {{ customer.status|replace('_', ' ')|title }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('salonmax_customer_ledger_detail', business_account_public_id=snapshot.business_account_public_id, customer_public_id=customer.customer_public_id) }}">Open Ledger</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No cloud customer ledger records yet for this salon business.</div>
+        {% endif %}
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1.25fr 0.75fr;">
+        <div class="panel">
+            <h2>Terminal Licence Health</h2>
+            <div class="muted" style="margin-bottom:12px;">Provider-side lease and check-in health for tills registered against this business.</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Terminal</th>
+                        <th>Status</th>
+                        <th>Health</th>
+                        <th>Last Check-In</th>
+                        <th>Expires</th>
+                        <th>Events</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for licence in snapshot.licences %}
+                    <tr>
+                        <td>{{ licence.terminal_device_public_id }}</td>
+                        <td>
+                            <span class="tag {% if licence.licence_status != 'active' %}warning{% endif %}">
+                                {{ licence.licence_status|title }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="tag {% if licence.health == 'expired' %}danger{% elif licence.health == 'warning' %}warning{% endif %}">
+                                {{ licence.health_label }}
+                            </span>
+                        </td>
+                        <td>{{ licence.last_check_in_at|localdt }}</td>
+                        <td>{{ licence.expires_at|localdt }}</td>
+                        <td>{{ licence.event_count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="panel">
+            <h2>Provisioned Terminals</h2>
+            {% if snapshot.terminals %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Terminal</th>
+                        <th>Site</th>
+                        <th>Mode</th>
+                        <th>Onboarding</th>
+                        <th>Manage</th>
+                        <th>Status</th>
+                        <th>Pairing</th>
+                        <th>Last Seen</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.terminals %}
+                    <tr>
+                        <td>
+                            <input form="save-terminal-{{ row.terminal_device_public_id }}" name="terminal_name" type="text" value="{{ row.terminal_name }}" required>
+                            <div class="muted">{{ row.terminal_device_public_id }}</div>
+                            <div><a href="{{ url_for('salonmax_terminal_diagnostics', terminal_device_public_id=row.terminal_device_public_id) }}">Open diagnostics</a></div>
+                        </td>
+                        <td>
+                            <select form="save-terminal-{{ row.terminal_device_public_id }}" name="site_public_id" required>
+                                {% for site in snapshot.sites %}
+                                {% if site.status == 'active' %}
+                                <option value="{{ site.site_public_id }}" {% if site.site_public_id == row.site_public_id %}selected{% endif %}>{{ site.name }} ({{ site.code }})</option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td><span class="tag neutral">{{ row.install_mode_label }}</span></td>
+                        <td>
+                            <span class="tag {% if row.onboarding_stage == 'ready_to_trade' %}{% elif row.onboarding_stage == 'paired' %}warning{% else %}neutral{% endif %}">
+                                {{ row.onboarding_label }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="tag {% if row.management_status != 'active' %}warning{% else %}neutral{% endif %}">
+                                {{ row.management_status|replace('_', ' ')|title }}
+                            </span>
+                        </td>
+                        <td><span class="tag {% if row.status != 'paired' %}warning{% endif %}">{{ row.status|replace('_', ' ')|title }}</span></td>
+                        <td>{{ row.pairing_code }}</td>
+                        <td>{{ row.last_seen_at|localdt or "Not yet" }}</td>
+                        <td>
+                            <div class="stack">
+                                <form id="save-terminal-{{ row.terminal_device_public_id }}" method="post" action="{{ url_for('salonmax_update_terminal', business_account_public_id=snapshot.business_account_public_id, terminal_device_public_id=row.terminal_device_public_id) }}">
+                                    <button type="submit">Save</button>
+                                </form>
+                                <form method="post" action="{{ url_for('salonmax_suspend_terminal', business_account_public_id=snapshot.business_account_public_id, terminal_device_public_id=row.terminal_device_public_id) }}">
+                                    <button type="submit">{{ 'Reactivate' if row.management_status == 'suspended' else 'Suspend' }}</button>
+                                </form>
+                                <form method="post" action="{{ url_for('salonmax_prepare_replacement_terminal', terminal_device_public_id=row.terminal_device_public_id) }}">
+                                    <button type="submit">Replacement Pi</button>
+                                </form>
+                                <div class="muted">Keeps this salon's existing local data and re-pairs replacement hardware.</div>
+                                <form method="post" action="{{ url_for('salonmax_prepare_fresh_install_terminal', terminal_device_public_id=row.terminal_device_public_id) }}">
+                                    <button type="submit">Fresh Install</button>
+                                </form>
+                                <div class="muted">Wipes inherited local till data and starts this terminal as a clean install.</div>
+                                <form method="post" action="{{ url_for('salonmax_retire_terminal', business_account_public_id=snapshot.business_account_public_id, terminal_device_public_id=row.terminal_device_public_id) }}">
+                                    <button type="submit">Retire Terminal</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No terminals provisioned yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Support Timeline</h2>
+            <div class="muted" style="margin-bottom:12px;">Provider-side operational history for this salon business. This is the first step toward a fuller support and audit trail.</div>
+            <form method="post" action="{{ url_for('salonmax_create_support_note', business_account_public_id=snapshot.business_account_public_id) }}" class="stack" style="margin-bottom:16px;">
+                <div class="grid" style="grid-template-columns: 0.9fr 1fr 1fr;">
+                    <div>
+                        <label for="author_name">Support staff</label>
+                        <input id="author_name" name="author_name" type="text" placeholder="Example: Ben">
+                    </div>
+                    <div>
+                        <label for="note_type">Action type</label>
+                        <select id="note_type" name="note_type">
+                            <option value="support_note">Support Note</option>
+                            <option value="customer_issue">Customer Issue</option>
+                            <option value="follow_up">Follow Up</option>
+                            <option value="remote_diagnostic">Remote Diagnostic</option>
+                            <option value="update_planned">Update Planned</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="terminal_device_public_id">Terminal</label>
+                        <select id="terminal_device_public_id" name="terminal_device_public_id">
+                            <option value="">Business-wide / no single terminal</option>
+                            {% for row in snapshot.terminals %}
+                            <option value="{{ row.terminal_device_public_id }}">{{ row.terminal_name }} ({{ row.terminal_device_public_id }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label for="note_text">Support note</label>
+                    <textarea id="note_text" name="note_text" rows="3" placeholder="Record what happened, what you checked, and what needs doing next."></textarea>
+                </div>
+                <div class="row">
+                    <button type="submit">Save Support Note</button>
+                </div>
+            </form>
+            {% if snapshot.support_timeline %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Event</th>
+                        <th>Terminal</th>
+                        <th>Summary</th>
+                        <th>Ref</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in snapshot.support_timeline %}
+                    <tr>
+                        <td>{{ item.occurred_at|localdt or item.received_at|localdt }}</td>
+                        <td>{{ item.label }}</td>
+                        <td>{{ item.terminal_device_public_id }}</td>
+                        <td>{{ item.summary or "-" }}</td>
+                        <td>{{ item.local_event_id or item.event_id }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No provider timeline events yet.</div>
+            {% endif %}
+
+            <div style="margin-top:18px;">
+                <h3>Recent Support Notes</h3>
+                {% if snapshot.support_notes %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>When</th>
+                            <th>Type</th>
+                            <th>Support Staff</th>
+                            <th>Terminal</th>
+                            <th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for note in snapshot.support_notes %}
+                        <tr>
+                            <td>{{ note.created_at|localdt }}</td>
+                            <td>{{ note.note_type|replace('_', ' ')|title }}</td>
+                            <td>{{ note.author_name or "-" }}</td>
+                            <td>{{ note.terminal_device_public_id or "-" }}</td>
+                            <td>{{ note.note_text }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="muted">No support notes recorded yet.</div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="panel">
+            <h2>Bed Estate</h2>
+            <div class="muted" style="margin-bottom:12px;">Physical sunbed devices known to the customer business, with local pricing currently synced into the platform view.</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Site</th>
+                        <th>Bed #</th>
+                        <th>Name</th>
+                        <th>Price / Min</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in snapshot.devices %}
+                    <tr>
+                        <td>{{ device.site_name }}</td>
+                        <td>{{ device.device_number }}</td>
+                        <td>{{ device.device_name }}</td>
+                        <td>
+                            {% if device.price_per_minute %}
+                                {{ "%.2f"|format(device.price_per_minute["price_per_minute"]) }}
+                            {% else %}
+                                <span class="muted">No rule</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr;">
+        <div class="panel">
+            <h2>Recent Sync Events</h2>
+            <div class="muted" style="margin-bottom:12px;">Most recent cloud events accepted from tills for this customer business.</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Terminal</th>
+                        <th>Type</th>
+                        <th>Received</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in snapshot.recent_events %}
+                    <tr>
+                        <td>{{ event.local_event_id }}</td>
+                        <td>{{ event.terminal_device_public_id }}</td>
+                        <td>{{ event.event_type }}</td>
+                        <td>{{ event.received_at|localdt }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "till_base.html" %}
+{% block content %}
+<div class="topbar">
+    <div>
+        <h1 style="margin: 0;">Totals And Cash Up</h1>
+        <div class="muted">
+            {{ staff.name }}
+            {% if site and terminal %}
+            | {{ site.name }} | {{ terminal.name }}
+            {% endif %}
+        </div>
+    </div>
+    <div class="row">
+        <a class="buttonish" href="{{ url_for('customer_search') }}">Back To Till</a>
+        <form method="post" action="{{ url_for('till_logout') }}">
+            <button type="submit">Logout</button>
+        </form>
+    </div>
+</div>
+
+<div class="grid cards">
+    <div class="panel">
+        <div class="muted">Current Shift</div>
+        <div class="metric" style="font-size: 24px;">{{ shift.name }}</div>
+        <div class="muted">{{ shift.hours }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Shift Cash</div>
+        <div class="metric">GBP {{ "%.2f"|format(shift_totals.cash_total) }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Running Day Total</div>
+        <div class="metric">GBP {{ "%.2f"|format(day_totals.sales_total) }}</div>
+        <div class="muted">Resets automatically at midnight</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Day Cash</div>
+        <div class="metric">GBP {{ "%.2f"|format(day_totals.cash_total) }}</div>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns: 1fr 1fr;">
+    <div class="panel">
+        <h2 style="margin-top: 0;">Current Shift Totals</h2>
+        <table>
+            <tbody>
+                <tr><th>Transactions</th><td>{{ shift_totals.transaction_count }}</td></tr>
+                <tr><th>Sales Total</th><td>GBP {{ "%.2f"|format(shift_totals.sales_total) }}</td></tr>
+                <tr><th>Cash</th><td>GBP {{ "%.2f"|format(shift_totals.cash_total) }}</td></tr>
+                <tr><th>Card</th><td>GBP {{ "%.2f"|format(shift_totals.card_total) }}</td></tr>
+                <tr><th>Account Balance</th><td>GBP {{ "%.2f"|format(shift_totals.account_balance_total) }}</td></tr>
+                <tr><th>Account Minutes</th><td>GBP {{ "%.2f"|format(shift_totals.account_minutes_total) }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2 style="margin-top: 0;">Running Day Totals</h2>
+        <table>
+            <tbody>
+                <tr><th>Transactions</th><td>{{ day_totals.transaction_count }}</td></tr>
+                <tr><th>Sales Total</th><td>GBP {{ "%.2f"|format(day_totals.sales_total) }}</td></tr>
+                <tr><th>Cash</th><td>GBP {{ "%.2f"|format(day_totals.cash_total) }}</td></tr>
+                <tr><th>Card</th><td>GBP {{ "%.2f"|format(day_totals.card_total) }}</td></tr>
+                <tr><th>Account Balance</th><td>GBP {{ "%.2f"|format(day_totals.account_balance_total) }}</td></tr>
+                <tr><th>Account Minutes</th><td>GBP {{ "%.2f"|format(day_totals.account_minutes_total) }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if till_session %}
+<div class="panel" style="max-width: 720px;">
+    <h2 style="margin-top: 0;">Close Shift Cash Up</h2>
+    <div class="muted" style="margin-bottom: 14px;">
+        Close the current shift at 4pm or 9pm. The next shift opens on zero, while the day total above keeps running until midnight.
+    </div>
+    <div class="grid cards">
+        <div>
+            <div class="muted">Opening Float</div>
+            <div class="metric" style="font-size: 24px;">GBP {{ "%.2f"|format(till_session.opening_float) }}</div>
+        </div>
+        <div>
+            <div class="muted">Expected Cash</div>
+            <div class="metric" style="font-size: 24px;">GBP {{ "%.2f"|format(till_session.expected_cash) }}</div>
+        </div>
+    </div>
+    <form method="post" action="{{ url_for('close_shift') }}" class="grid" style="margin-top: 16px;">
+        <input type="number" step="0.01" min="0" name="counted_cash" placeholder="Counted cash" required>
+        <input type="text" name="closing_notes" placeholder="Closing notes">
+        <button type="submit">Close Shift</button>
+    </form>
+</div>
+{% else %}
+<div class="panel">
+    <h2 style="margin-top: 0;">Shift Closed</h2>
+    <div class="muted">
+        This shift is already closed. The running day total remains visible here until midnight, and the next shift will open on zero.
+    </div>
+    <div style="margin-top: 16px;">
+        <a class="buttonish" href="{{ url_for('open_till') }}">Open Next Shift</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

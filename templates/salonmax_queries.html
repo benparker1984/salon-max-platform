@@ -1,0 +1,218 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Support Queries</h2>
+        <div class="muted">Provider-side search across synced transactions and cloud customers. Use this to answer support questions quickly without opening a salon's local back office first.</div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Transactions</div>
+            <div class="metric">{{ snapshot.transaction_count }}</div>
+            <div class="muted">Current filtered result set</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Gross Sales</div>
+            <div class="metric">GBP {{ "%.2f"|format(snapshot.gross_sales_total) }}</div>
+            <div class="muted">Cash GBP {{ "%.2f"|format(snapshot.cash_sale_total) }} / Card GBP {{ "%.2f"|format(snapshot.card_sale_total) }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Transaction Mix</div>
+            <div class="metric">{{ snapshot.tanning_sale_count }}</div>
+            <div class="muted">{{ snapshot.package_sale_count }} package / {{ snapshot.tanning_sale_count }} tanning</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Customers</div>
+            <div class="metric">{{ snapshot.customer_count }}</div>
+            <div class="muted">Current filtered directory</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Filter Transactions</h2>
+        <form method="get" action="{{ url_for('salonmax_owner_queries') }}" class="grid" style="grid-template-columns: 1.2fr 1fr 1fr 1fr 0.8fr 1.4fr auto; align-items:end;">
+            <div>
+                <label for="business_account_public_id">Business</label>
+                <select id="business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="terminal_device_public_id">Terminal</label>
+                <select id="terminal_device_public_id" name="terminal_device_public_id">
+                    <option value="">All terminals</option>
+                    {% for terminal in snapshot.terminals %}
+                    <option value="{{ terminal.terminal_device_public_id }}" {% if snapshot.filters.terminal_device_public_id == terminal.terminal_device_public_id %}selected{% endif %}>{{ terminal.terminal_name }} ({{ terminal.terminal_device_public_id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="transaction_type">Type</label>
+                <select id="transaction_type" name="transaction_type">
+                    <option value="">All types</option>
+                    <option value="package_sale" {% if snapshot.filters.transaction_type == 'package_sale' %}selected{% endif %}>Package sale</option>
+                    <option value="tanning_sale" {% if snapshot.filters.transaction_type == 'tanning_sale' %}selected{% endif %}>Tanning sale</option>
+                </select>
+            </div>
+            <div>
+                <label for="payment_method">Payment</label>
+                <select id="payment_method" name="payment_method">
+                    <option value="">All methods</option>
+                    <option value="cash" {% if snapshot.filters.payment_method == 'cash' %}selected{% endif %}>Cash</option>
+                    <option value="card" {% if snapshot.filters.payment_method == 'card' %}selected{% endif %}>Card</option>
+                    <option value="package_minutes" {% if snapshot.filters.payment_method == 'package_minutes' %}selected{% endif %}>Package Minutes</option>
+                    <option value="account_balance" {% if snapshot.filters.payment_method == 'account_balance' %}selected{% endif %}>Account Balance</option>
+                </select>
+            </div>
+            <div>
+                <label for="days">Days</label>
+                <select id="days" name="days">
+                    <option value="7" {% if snapshot.filters.days == 7 %}selected{% endif %}>7</option>
+                    <option value="30" {% if snapshot.filters.days == 30 %}selected{% endif %}>30</option>
+                    <option value="90" {% if snapshot.filters.days == 90 %}selected{% endif %}>90</option>
+                    <option value="365" {% if snapshot.filters.days == 365 %}selected{% endif %}>365</option>
+                </select>
+            </div>
+            <div>
+                <label for="transaction_search">Search</label>
+                <input id="transaction_search" name="transaction_search" type="text" value="{{ snapshot.filters.transaction_search }}" placeholder="Txn no, customer, notes, terminal">
+            </div>
+            <div>
+                <button type="submit">Run Query</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>Synced Transactions</h2>
+        <div class="row" style="margin-bottom:12px;">
+            <a href="{{ url_for('salonmax_owner_queries_transactions_export', business_account_public_id=snapshot.filters.business_account_public_id, terminal_device_public_id=snapshot.filters.terminal_device_public_id, transaction_type=snapshot.filters.transaction_type, payment_method=snapshot.filters.payment_method, transaction_search=snapshot.filters.transaction_search, customer_search=snapshot.filters.customer_search, days=snapshot.filters.days) }}">Export Transactions CSV</a>
+        </div>
+        {% if snapshot.transactions %}
+        <table>
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Business</th>
+                    <th>Terminal</th>
+                    <th>Transaction</th>
+                    <th>Customer</th>
+                    <th>Type</th>
+                    <th>Payment</th>
+                    <th>Total</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.transactions %}
+                <tr>
+                    <td>{{ row.occurred_at|localdt }}</td>
+                    <td>{{ row.business_name or row.business_account_public_id }}</td>
+                    <td>{{ row.terminal_name }}</td>
+                    <td>
+                        <div><strong>{{ row.transaction_number }}</strong></div>
+                        <div class="muted">{{ row.local_event_id }}</div>
+                    </td>
+                    <td>
+                        {% if row.customer_known %}
+                        <a href="{{ url_for('salonmax_customer_ledger_detail', business_account_public_id=row.business_account_public_id, customer_public_id=row.customer_public_id) }}">{{ row.customer_label }}</a>
+                        {% else %}
+                        {{ row.customer_label }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div>{{ row.transaction_type|replace('_', ' ')|title }}</div>
+                        {% if row.package_name %}
+                        <div class="muted">{{ row.package_name }}</div>
+                        {% elif row.minutes %}
+                        <div class="muted">{{ row.minutes }} min{% if row.account_minutes_used %} / {{ row.account_minutes_used }} account min used{% endif %}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.payment_method|replace('_', ' ')|title }}</td>
+                    <td>GBP {{ "%.2f"|format(row.total_amount) }}</td>
+                    <td>{{ row.notes or "-" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No synced transactions matched the current filters.</div>
+        {% endif %}
+    </div>
+
+    <div class="panel">
+        <h2>Customer Directory</h2>
+        <div class="row" style="margin-bottom:12px;">
+            <a href="{{ url_for('salonmax_owner_queries_customers_export', business_account_public_id=snapshot.filters.business_account_public_id, terminal_device_public_id=snapshot.filters.terminal_device_public_id, transaction_type=snapshot.filters.transaction_type, payment_method=snapshot.filters.payment_method, transaction_search=snapshot.filters.transaction_search, customer_search=snapshot.filters.customer_search, days=snapshot.filters.days) }}">Export Customers CSV</a>
+        </div>
+        <form method="get" action="{{ url_for('salonmax_owner_queries') }}" class="grid" style="grid-template-columns: 1.2fr 1.8fr auto; align-items:end; margin-bottom:12px;">
+            <div>
+                <label for="customer_business_account_public_id">Business</label>
+                <select id="customer_business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="customer_search">Customer search</label>
+                <input id="customer_search" name="customer_search" type="text" value="{{ snapshot.filters.customer_search }}" placeholder="Name, customer number, phone, email">
+            </div>
+            <div>
+                <button type="submit">Search Customers</button>
+            </div>
+        </form>
+        {% if snapshot.customers %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Business</th>
+                    <th>Contact</th>
+                    <th>Minutes</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                    <th>Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for customer in snapshot.customers %}
+                <tr>
+                    <td>
+                        <div><strong>{{ customer.full_name }}</strong></div>
+                        <div class="muted">{{ customer.customer_number or customer.customer_public_id }}</div>
+                    </td>
+                    <td>{{ customer.business_name or customer.business_account_public_id }}</td>
+                    <td>
+                        <div>{{ customer.phone or "-" }}</div>
+                        <div class="muted">{{ customer.email or "-" }}</div>
+                    </td>
+                    <td>{{ customer.minutes_available }}</td>
+                    <td>{{ customer.currency_code }} {{ customer.current_balance }}</td>
+                    <td>
+                        <span class="tag {% if customer.status != 'active' %}warning{% endif %}">
+                            {{ customer.status|replace('_', ' ')|title }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('salonmax_customer_ledger_detail', business_account_public_id=customer.business_account_public_id, customer_public_id=customer.customer_public_id) }}">Open Ledger</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No cloud customers matched the current filters.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

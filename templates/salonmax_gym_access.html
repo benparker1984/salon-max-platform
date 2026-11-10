@@ -1,0 +1,235 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Gym Access: {{ snapshot.business_name }}</h2>
+        <div class="muted">This is the business-level gym module: public signup, members, classes, reception PIN entry, door devices, access logs, and support visibility. It now lives under the same Salon Max business account as tills and licences.</div>
+        <div class="row" style="margin-top:14px;">
+            <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=snapshot.business_account_public_id) }}">Back to business</a>
+            <a href="{{ url_for('salonmax_owner_gyms') }}">All gyms</a>
+            <a href="{{ url_for('salonmax_public_gym_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Customer website</a>
+            <a href="{{ url_for('salonmax_gym_reception_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Reception iPad</a>
+            <a href="{{ url_for('salonmax_gym_staff_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Gym staff page</a>
+            <a href="{{ url_for('salonmax_gym_demo_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Prototype all-in-one</a>
+            <span class="tag neutral">{{ snapshot.module_stage }}</span>
+            <span class="tag {% if snapshot.account_status != 'active' %}warning{% endif %}">{{ snapshot.account_status|replace('_', ' ')|title }}</span>
+            <span class="tag {% if snapshot.subscription_status != 'active' %}warning{% endif %}">{{ snapshot.subscription_status|replace('_', ' ')|title }}</span>
+        </div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Gym Members</div>
+            <div class="metric">{{ snapshot.member_count }}</div>
+            <div class="muted">{{ snapshot.active_member_count }} active / {{ snapshot.expired_member_count }} expired</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Door / Reception Devices</div>
+            <div class="metric">{{ snapshot.door_device_count }}</div>
+            <div class="muted">Will reuse platform licence and diagnostics checks</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Software Lease</div>
+            <div class="metric">£{{ snapshot.monthly_fee }}</div>
+            <div class="muted">Per month, managed by Salon Max</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Public Signup</div>
+            <div class="metric" style="font-size:20px;"><a href="{{ url_for('salonmax_public_gym_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">{{ snapshot.signup_url }}</a></div>
+            <div class="muted">Includes the recovered prototype: signup, member login, PINs, packages, reception check-in, staff dashboard, classes, and analytics.</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Recovered Gym Prototype Features</h2>
+        <div class="muted" style="margin-bottom:12px;">These are now attached to this gym account through the public gym site route.</div>
+        <div class="grid cards">
+            <div class="panel">
+                <div class="muted">Customer Site</div>
+                <div><strong>Signup, member login, package buying, PIN display</strong></div>
+                <div class="row" style="margin-top:12px;"><a href="{{ url_for('salonmax_public_gym_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Open customer website</a></div>
+            </div>
+            <div class="panel">
+                <div class="muted">Reception</div>
+                <div><strong>PIN keypad check-in and access decision simulator</strong></div>
+                <div class="row" style="margin-top:12px;"><a href="{{ url_for('salonmax_gym_reception_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Open reception iPad screen</a></div>
+            </div>
+            <div class="panel">
+                <div class="muted">Gym Staff</div>
+                <div><strong>Members, Stripe status, class catalogue, prices, access logs</strong></div>
+                <div class="row" style="margin-top:12px;"><a href="{{ url_for('salonmax_gym_staff_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Open gym staff page</a></div>
+            </div>
+            <div class="panel">
+                <div class="muted">Salon Max Admin</div>
+                <div><strong>Gym accounts, lease revenue, suspend/reactivate controls</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Staff Password & Lockout Recovery</h2>
+        <div class="muted" style="margin-bottom:12px;">
+            Use this to set the first gym staff password or reset it if the gym gets locked out. Resetting it will sign out existing staff sessions for this gym.
+        </div>
+        <form method="post" action="{{ url_for('salonmax_owner_reset_gym_staff_password', business_account_public_id=snapshot.business_account_public_id) }}" class="grid cards">
+            <label>
+                New staff password
+                <input type="password" name="staff_password" minlength="8" required placeholder="Minimum 8 characters">
+            </label>
+            <label>
+                Confirm staff password
+                <input type="password" name="confirm_staff_password" minlength="8" required placeholder="Repeat password">
+            </label>
+            <div style="align-self:end;">
+                <button class="primary" type="submit">Set / Reset Staff Password</button>
+            </div>
+        </form>
+        <div class="row" style="margin-top:12px;">
+            <a href="{{ url_for('salonmax_gym_staff_login', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Open staff login</a>
+            <a href="{{ url_for('salonmax_gym_reception_site', business_account_public_id=snapshot.business_account_public_id) }}" target="_blank">Open reception login</a>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Customer Payment Setup</h2>
+        <div class="muted" style="margin-bottom:12px;">
+            Connect the gym's own Stripe account here. Customer payments are created as Stripe Connect direct charges, so money lands in the gym account rather than Salon Max holding customer funds.
+        </div>
+        <form method="post" action="{{ url_for('salonmax_owner_save_gym_payment_settings', business_account_public_id=snapshot.business_account_public_id) }}" class="grid cards">
+            <label>
+                Stripe connected account ID
+                <input name="provider_account_id" value="{{ snapshot.payment_settings.provider_account_id }}" placeholder="acct_...">
+            </label>
+            <label>
+                Currency
+                <input name="currency" value="{{ snapshot.payment_settings.currency or 'gbp' }}" maxlength="3" placeholder="gbp">
+            </label>
+            <label>
+                Salon Max application fee %
+                <input type="number" min="0" max="100" step="0.1" name="application_fee_percent" value="{{ snapshot.payment_settings.application_fee_percent or 0 }}">
+            </label>
+            <label>
+                Checkout status
+                <select name="checkout_enabled">
+                    <option value="0" {% if not snapshot.payment_settings.checkout_enabled %}selected{% endif %}>Setup only / disabled</option>
+                    <option value="1" {% if snapshot.payment_settings.checkout_enabled %}selected{% endif %}>Enabled</option>
+                </select>
+            </label>
+            <div style="align-self:end;">
+                <button class="primary" type="submit">Save Payment Setup</button>
+            </div>
+        </form>
+        <div class="row" style="margin-top:12px;">
+            <span class="tag {% if snapshot.stripe_secret_configured %}good{% else %}warning{% endif %}">
+                Platform Stripe key: {% if snapshot.stripe_secret_configured %}Configured{% else %}Missing{% endif %}
+            </span>
+            <span class="tag {% if snapshot.payment_settings.provider_account_id %}good{% else %}warning{% endif %}">
+                Gym Stripe account: {% if snapshot.payment_settings.provider_account_id %}Set{% else %}Not set{% endif %}
+            </span>
+            <span class="tag {% if snapshot.payment_settings.checkout_enabled %}good{% else %}neutral{% endif %}">
+                Checkout: {% if snapshot.payment_settings.checkout_enabled %}Enabled{% else %}Disabled{% endif %}
+            </span>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Business Profile</h2>
+            <div class="grid cards">
+                <div class="panel">
+                    <div class="muted">Contact</div>
+                    <div><strong>{{ snapshot.contact_name or "-" }}</strong></div>
+                    <div class="muted">{{ snapshot.contact_email or "-" }}</div>
+                    <div class="muted">{{ snapshot.contact_phone or "-" }}</div>
+                </div>
+                <div class="panel">
+                    <div class="muted">Location</div>
+                    <div><strong>{{ snapshot.city or "-" }}</strong></div>
+                    <div class="muted">{{ snapshot.postcode or "-" }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Platform Devices</h2>
+            {% if snapshot.terminals %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>Status</th>
+                        <th>Sync</th>
+                        <th>Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.terminals %}
+                    <tr>
+                        <td>
+                            <div><strong>{{ row.terminal_name }}</strong></div>
+                            <div class="muted">{{ row.terminal_device_public_id }}</div>
+                        </td>
+                        <td>{{ row.management_status|replace('_', ' ')|title }}</td>
+                        <td>{{ row.sync_status|replace('_', ' ')|title }}</td>
+                        <td>{{ row.last_seen_at|localdt or "Never" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No reception iPads, door controllers, or tills are attached yet. In production, gym door devices will appear here and in diagnostics.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Class Catalogue Preview</h2>
+        <div class="muted" style="margin-bottom:12px;">These are the KADO-style class/package rules from the prototype. Next step is to move them from prototype data into real platform tables.</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Class</th>
+                    <th>Schedule</th>
+                    <th>Package Price</th>
+                    <th>PIN Access Length</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.classes %}
+                <tr>
+                    <td><strong>{{ row.name }}</strong></td>
+                    <td>{{ row.schedule }}</td>
+                    <td>£{{ row.price }}</td>
+                    <td>{{ row.length }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Merge Checklist</h2>
+        <div class="grid cards">
+            <div class="panel">
+                <div class="muted">Done</div>
+                <div><strong>Owner platform entry point</strong></div>
+                <div class="muted">Gyms now has a top-level Salon Max admin page and a business-level Gym Access page.</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Next</div>
+                <div><strong>Persistent gym database tables</strong></div>
+                <div class="muted">Members, class sessions, purchases, access logs, and device check-ins should be stored in the cloud database.</div>
+            </div>
+            <div class="panel">
+                <div class="muted">Then</div>
+                <div><strong>Public KADO signup site</strong></div>
+                <div class="muted">Route a branded member joining/login page to this business account.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

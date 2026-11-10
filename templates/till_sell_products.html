@@ -1,0 +1,103 @@
+{% extends "till_base.html" %}
+{% block content %}
+<div class="topbar">
+    <div>
+        <h1 style="margin: 0;">Sell Products</h1>
+        <div class="muted">{{ customer.first_name }} {{ customer.last_name }} | Till session #{{ till_session.id }}</div>
+    </div>
+    <div class="row">
+        <a class="buttonish" href="{{ url_for('till_customer_summary', customer_id=customer.id) }}">Back To Summary</a>
+        <a class="buttonish" href="{{ url_for('till_totals') }}">Totals And Cash Up</a>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns: 1fr 1fr;">
+    <div class="panel">
+        <div class="muted">Account Balance</div>
+        <div class="metric">GBP {{ "%.2f"|format(customer.account_balance) }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Retail Products Available</div>
+        <div class="metric">{{ retail_products|length }}</div>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns: 1.2fr 1fr;">
+    <div class="panel">
+        <div class="row" style="justify-content: space-between; align-items: end; margin-bottom: 12px;">
+            <h2 style="margin-bottom: 0;">Available Products</h2>
+            <form method="get" action="{{ url_for('till_sell_products', customer_id=customer.id) }}" class="row">
+                <input type="text" name="q" value="{{ search }}" placeholder="Scan barcode or search name">
+                <button type="submit">Find</button>
+            </form>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Group</th>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in retail_products %}
+                <tr>
+                    <td>{{ row.group_name or "-" }}</td>
+                    <td>{{ row.name }}{% if row.size_label or row.unit_label %} - {{ row.size_label }} {{ row.unit_label }}{% endif %}</td>
+                    <td>{{ row.sku }}</td>
+                    <td>GBP {{ "%.2f"|format(row.price) }}</td>
+                    <td>{{ row.stock_quantity }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5">No retail products with stock are available.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Complete Retail Sale</h2>
+        <form method="post" action="{{ url_for('till_sell_products_post', customer_id=customer.id) }}" class="grid">
+            <select name="site_id">
+                {% for site in sites %}
+                <option value="{{ site.id }}" {% if site.id == site_id %}selected{% endif %}>{{ site.name }}</option>
+                {% endfor %}
+            </select>
+
+            <select name="terminal_id">
+                {% for terminal in terminals %}
+                <option value="{{ terminal.id }}" {% if terminal.id == terminal_id %}selected{% endif %}>{{ terminal.name }}</option>
+                {% endfor %}
+            </select>
+
+            <select name="product_id" required>
+                {% for row in retail_products %}
+                <option value="{{ row.id }}">{{ row.name }}{% if row.size_label or row.unit_label %} - {{ row.size_label }} {{ row.unit_label }}{% endif %} - GBP {{ "%.2f"|format(row.price) }} - Stock {{ row.stock_quantity }}</option>
+                {% endfor %}
+            </select>
+
+            {% if search %}
+            <div class="muted">Search results for <strong>{{ search }}</strong></div>
+            {% endif %}
+
+            <input type="number" min="1" name="quantity" value="1" required>
+
+            <select name="payment_method">
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="account_balance">Account Balance</option>
+            </select>
+
+            {% if retail_products %}
+            <button type="submit">Complete Product Sale</button>
+            {% else %}
+            <div class="muted">No products match this search or there is no stock available.</div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+{% endblock %}

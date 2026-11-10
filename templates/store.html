@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid" style="grid-template-columns: 2.1fr 1fr;">
+    <div class="stack">
+        <div class="panel">
+            <div class="row" style="justify-content: space-between; align-items: end; margin-bottom: 16px;">
+                <div>
+                    <h1 style="margin-bottom: 8px;">Store Catalogue</h1>
+                    <div class="muted">Products created here are sold live on the till, so product, price, and stock changes appear there automatically.</div>
+                </div>
+                <form method="get" action="{{ url_for('store') }}" class="row">
+                    <input type="text" name="q" value="{{ search }}" placeholder="Search SKU, group, or product">
+                    <button type="submit">Search</button>
+                </form>
+            </div>
+
+            <div class="stack">
+                {% for row in product_rows %}
+                <div style="border: 1px solid var(--line); border-radius: 16px; padding: 16px;">
+                    <form method="post" action="{{ url_for('update_retail_product', product_id=row.id) }}" class="stack">
+                        <div class="row">
+                            <div style="flex: 1;">
+                                <div class="muted">Group</div>
+                                <select name="group_id" style="width: 100%;">
+                                    <option value="">No Group</option>
+                                    {% for group in group_rows %}
+                                    <option value="{{ group.id }}" {% if group.id == row.group_id %}selected{% endif %}>{{ group.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div style="flex: 1;">
+                                <div class="muted">Product</div>
+                                <input type="text" name="name" value="{{ row.name }}" required style="width: 100%;">
+                            </div>
+                            <div style="flex: 1;">
+                                <div class="muted">SKU / Barcode</div>
+                                <input type="text" name="sku" value="{{ row.sku }}" required style="width: 100%;">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div>
+                                <div class="muted">Size</div>
+                                <input type="text" name="size_label" value="{{ row.size_label }}" placeholder="Size" style="width: 90px;">
+                            </div>
+                            <div>
+                                <div class="muted">Unit</div>
+                                <input type="text" name="unit_label" value="{{ row.unit_label }}" placeholder="Unit" style="width: 90px;">
+                            </div>
+                            <div>
+                                <div class="muted">Price</div>
+                                <input type="number" step="0.01" min="0" name="price" value="{{ row.price }}" required style="width: 110px;">
+                            </div>
+                            <div>
+                                <div class="muted">Stock</div>
+                                <input type="number" min="0" name="stock_quantity" value="{{ row.stock_quantity }}" required style="width: 90px;">
+                            </div>
+                            <div>
+                                <div class="muted">Commission %</div>
+                                <input type="number" step="0.01" min="0" name="commission_rate" value="{{ row.commission_rate }}" style="width: 110px;">
+                            </div>
+                            <div style="padding-top: 24px;">
+                                <button type="submit">Save Product</button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <form method="post" action="{{ url_for('adjust_retail_product_stock', product_id=row.id) }}" class="row" style="margin-top: 12px;">
+                        <div class="muted" style="min-width: 120px;">Stock adjustment</div>
+                        <input type="number" name="change_quantity" placeholder="+10 or -1" required style="width: 120px;">
+                        <input type="text" name="reason" placeholder="Reason, e.g. delivery, damaged, count correction" style="min-width: 300px; flex: 1;">
+                        <button type="submit" class="secondary">Adjust Stock</button>
+                    </form>
+                </div>
+                {% else %}
+                <div class="muted">No retail products created yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Recent Stock Adjustments</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Product</th>
+                        <th>Change</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in stock_adjustment_rows %}
+                    <tr>
+                        <td>{{ row.created_at }}</td>
+                        <td>{{ row.product_name }}{% if row.product_sku %} ({{ row.product_sku }}){% endif %}</td>
+                        <td>{{ row.change_quantity }}</td>
+                        <td>{{ row.reason or "-" }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4">No stock adjustments recorded yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="stack">
+        <div class="panel">
+            <h2>Create Group</h2>
+            <form method="post" action="{{ url_for('create_product_group') }}" class="stack">
+                <input type="text" name="name" placeholder="Group name" required>
+                <input type="number" name="sort_order" value="0" placeholder="Sort order">
+                <button type="submit">Add Group</button>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>Add Product</h2>
+            <form method="post" action="{{ url_for('create_retail_product') }}" class="stack">
+                <select name="group_id">
+                    <option value="">No Group</option>
+                    {% for row in group_rows %}
+                    <option value="{{ row.id }}">{{ row.name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" name="name" placeholder="Product name" required>
+                <input type="text" name="sku" placeholder="SKU / barcode" required>
+                <div class="row">
+                    <input type="text" name="size_label" placeholder="Size" style="flex: 1;">
+                    <input type="text" name="unit_label" placeholder="Unit, e.g. ml" style="flex: 1;">
+                </div>
+                <input type="number" step="0.01" min="0" name="price" placeholder="Price" required>
+                <input type="number" min="0" name="stock_quantity" placeholder="Stock quantity" required>
+                <input type="number" step="0.01" min="0" name="commission_rate" value="0" placeholder="Commission percent">
+                <button type="submit">Add Product</button>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>Product Groups</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Group</th>
+                        <th>Sort</th>
+                        <th>Products</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in group_rows %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.sort_order }}</td>
+                        <td>{{ row.product_count }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3">No groups created yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

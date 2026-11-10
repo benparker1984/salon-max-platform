@@ -1,0 +1,133 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Licences And Access</h2>
+        <div class="muted">Owner-side control surface for till leases and trading access. Use this to see which terminals are healthy, stale, expiring, or blocked, and to take safe platform-level actions without drifting into normal back-office work.</div>
+    </div>
+
+    <div class="panel">
+        <form method="get" action="{{ url_for('salonmax_owner_licences') }}" class="grid" style="grid-template-columns: 1.2fr 1fr auto; align-items:end;">
+            <div>
+                <label for="business_account_public_id">Business</label>
+                <select id="business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="health_filter">Health</label>
+                <select id="health_filter" name="health_filter">
+                    {% for option in snapshot.health_filter_options %}
+                    <option value="{{ option.value }}" {% if snapshot.filters.health_filter == option.value %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit">Refresh</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Healthy</div>
+            <div class="metric">{{ snapshot.healthy_count }}</div>
+            <div class="muted">Leases currently healthy</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Check-In Stale</div>
+            <div class="metric">{{ snapshot.stale_count }}</div>
+            <div class="muted">Needs terminal attention</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Expiring Soon</div>
+            <div class="metric">{{ snapshot.expiring_count }}</div>
+            <div class="muted">Within the next 72 hours</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Blocked / Expired</div>
+            <div class="metric">{{ snapshot.blocked_count }}</div>
+            <div class="muted">Business, site, terminal, or licence problem</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Unlicensed Terminals</div>
+            <div class="metric">{{ snapshot.unlicensed_count }}</div>
+            <div class="muted">Provisioned without a lease row</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Terminal Leases</h2>
+        {% if snapshot.rows %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Business</th>
+                    <th>Terminal</th>
+                    <th>Site</th>
+                    <th>Licence</th>
+                    <th>Health</th>
+                    <th>Expires</th>
+                    <th>Last Check-In</th>
+                    <th>Access Control</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.rows %}
+                <tr>
+                    <td>
+                        <div><strong>{{ row.business_name or row.business_account_public_id }}</strong></div>
+                        <div class="muted">{{ row.business_account_public_id }}</div>
+                    </td>
+                    <td>
+                        <div><strong><a href="{{ url_for('salonmax_terminal_diagnostics', terminal_device_public_id=row.terminal_device_public_id) }}">{{ row.terminal_name }}</a></strong></div>
+                        <div class="muted">{{ row.terminal_device_public_id }}</div>
+                    </td>
+                    <td>{{ row.site_name or "-" }}</td>
+                    <td>
+                        <span class="tag {% if row.licence_status != 'active' %}warning{% endif %}">
+                            {{ row.licence_status|replace('_', ' ')|title }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="tag {% if row.health == 'healthy' %}{% elif row.health == 'stale' or row.health == 'expiring' %}warning{% else %}danger{% endif %}">
+                            {{ row.health_label }}
+                        </span>
+                    </td>
+                    <td>{{ row.expires_at|localdt or "-" }}</td>
+                    <td>{{ row.last_check_in_at|localdt or "Never" }}</td>
+                    <td>
+                        <div>Business: {{ row.business_status|replace('_', ' ')|title }}</div>
+                        <div class="muted">Site: {{ row.site_status|replace('_', ' ')|title }} / Terminal: {{ row.management_status|replace('_', ' ')|title }}</div>
+                    </td>
+                    <td>
+                        <div class="stack">
+                            <form method="post" action="{{ url_for('salonmax_extend_terminal_licence', terminal_device_public_id=row.terminal_device_public_id) }}">
+                                <input type="hidden" name="business_account_public_id" value="{{ snapshot.filters.business_account_public_id }}">
+                                <input type="hidden" name="health_filter" value="{{ snapshot.filters.health_filter }}">
+                                <button type="submit">Extend 30 Days</button>
+                            </form>
+                            <form method="post" action="{{ url_for('salonmax_suspend_terminal', business_account_public_id=row.business_account_public_id, terminal_device_public_id=row.terminal_device_public_id) }}">
+                                <button type="submit">{{ 'Reactivate Terminal' if row.management_status == 'suspended' else 'Suspend Terminal' }}</button>
+                            </form>
+                            <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=row.business_account_public_id) }}">Open Business</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No licence rows match the current filters.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

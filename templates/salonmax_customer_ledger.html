@@ -1,0 +1,220 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Customer Ledger</h2>
+        <div class="muted" style="margin-bottom:12px;">Support and audit view for a single cloud customer record inside this salon business tenant.</div>
+        <div class="row">
+            <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=snapshot.business_account_public_id) }}" style="text-decoration:none; color:#dbeafe; font-weight:600;">Back to business</a>
+            <span class="tag neutral">{{ snapshot.business_name }}</span>
+            <span class="tag {% if snapshot.status != 'active' %}warning{% endif %}">{{ snapshot.status|replace('_', ' ')|title }}</span>
+        </div>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Customer</div>
+            <div class="metric" style="font-size:24px;">{{ snapshot.full_name }}</div>
+            <div class="muted">{{ snapshot.customer_number or snapshot.customer_public_id }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Minutes Available</div>
+            <div class="metric">{{ snapshot.minutes_available }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Current Balance</div>
+            <div class="metric">GBP {{ snapshot.current_balance }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Contact</div>
+            <div>{{ snapshot.phone or "-" }}</div>
+            <div class="muted">{{ snapshot.email or "-" }}</div>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Adjust Minutes</h2>
+            <div class="muted" style="margin-bottom:12px;">Use this for manual minute corrections, refund restores, or reversals. Positive numbers add minutes, negative numbers remove them. Every change is written to the minute ledger and support audit trail.</div>
+            <form method="post" action="{{ url_for('salonmax_customer_ledger_adjust', business_account_public_id=snapshot.business_account_public_id, customer_public_id=snapshot.customer_public_id) }}" class="stack">
+                <input type="hidden" name="ledger_kind" value="minutes">
+                <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                    <div>
+                        <label for="minutes_adjustment_type">Adjustment Type</label>
+                        <select id="minutes_adjustment_type" name="adjustment_type">
+                            {% for option in snapshot.adjustment_type_options %}
+                            <option value="{{ option.value }}">{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="delta_minutes">Minutes</label>
+                        <input id="delta_minutes" name="delta_minutes" type="number" step="1" placeholder="Example: 10 or -10">
+                    </div>
+                </div>
+                <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                    <div>
+                        <label for="minutes_author_name">Support Staff</label>
+                        <input id="minutes_author_name" name="author_name" type="text" placeholder="Who is making this change?">
+                    </div>
+                    <div>
+                        <label for="minutes_terminal_device_public_id">Terminal Link</label>
+                        <input id="minutes_terminal_device_public_id" name="terminal_device_public_id" type="text" placeholder="Optional terminal id">
+                    </div>
+                </div>
+                <div>
+                    <label for="minutes_reason">Reason</label>
+                    <textarea id="minutes_reason" name="reason" rows="3" placeholder="Why are you changing this customer's minutes?"></textarea>
+                </div>
+                <div>
+                    <button type="submit">Save Minute Adjustment</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>Adjust Balance</h2>
+            <div class="muted" style="margin-bottom:12px;">Use this for manual money corrections, refund credits, or reversals. Positive numbers add value, negative numbers remove it. Every change is written to the money ledger and support audit trail.</div>
+            <form method="post" action="{{ url_for('salonmax_customer_ledger_adjust', business_account_public_id=snapshot.business_account_public_id, customer_public_id=snapshot.customer_public_id) }}" class="stack">
+                <input type="hidden" name="ledger_kind" value="balance">
+                <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                    <div>
+                        <label for="balance_adjustment_type">Adjustment Type</label>
+                        <select id="balance_adjustment_type" name="adjustment_type">
+                            {% for option in snapshot.adjustment_type_options %}
+                            <option value="{{ option.value }}">{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="delta_amount">Amount (GBP)</label>
+                        <input id="delta_amount" name="delta_amount" type="number" step="0.01" placeholder="Example: 15.00 or -15.00">
+                    </div>
+                </div>
+                <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                    <div>
+                        <label for="balance_author_name">Support Staff</label>
+                        <input id="balance_author_name" name="author_name" type="text" placeholder="Who is making this change?">
+                    </div>
+                    <div>
+                        <label for="balance_terminal_device_public_id">Terminal Link</label>
+                        <input id="balance_terminal_device_public_id" name="terminal_device_public_id" type="text" placeholder="Optional terminal id">
+                    </div>
+                </div>
+                <div>
+                    <label for="balance_reason">Reason</label>
+                    <textarea id="balance_reason" name="reason" rows="3" placeholder="Why are you changing this customer's balance?"></textarea>
+                </div>
+                <div>
+                    <button type="submit">Save Balance Adjustment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="panel">
+            <h2>Minute Ledger</h2>
+            {% if snapshot.minute_ledger_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Type</th>
+                        <th>Delta</th>
+                        <th>After</th>
+                        <th>Terminal</th>
+                        <th>Ref</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.minute_ledger_rows %}
+                    <tr>
+                        <td>{{ row.created_at|localdt }}</td>
+                        <td>{{ row.entry_type|replace('_', ' ')|title }}</td>
+                        <td>{{ row.delta_minutes }}</td>
+                        <td>{{ row.minutes_after }}</td>
+                        <td>{{ row.terminal_device_public_id or "-" }}</td>
+                        <td>{{ row.source_reference or row.source_event_id }}</td>
+                        <td>{{ row.notes or "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No minute ledger entries recorded yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <h2>Money Ledger</h2>
+            {% if snapshot.balance_ledger_rows %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Type</th>
+                        <th>Delta</th>
+                        <th>After</th>
+                        <th>Terminal</th>
+                        <th>Ref</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in snapshot.balance_ledger_rows %}
+                    <tr>
+                        <td>{{ row.created_at|localdt }}</td>
+                        <td>{{ row.entry_type|replace('_', ' ')|title }}</td>
+                        <td>{{ row.delta_amount }}</td>
+                        <td>{{ row.balance_after }}</td>
+                        <td>{{ row.terminal_device_public_id or "-" }}</td>
+                        <td>{{ row.source_reference or row.source_event_id }}</td>
+                        <td>{{ row.notes or "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="muted">No money ledger entries recorded yet.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Adjustment Audit</h2>
+        <div class="muted" style="margin-bottom:12px;">Support-side note trail for manual credits, debits, refunds, and reversals applied to this customer.</div>
+        {% if snapshot.adjustment_note_rows %}
+        <table>
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Type</th>
+                    <th>Support Staff</th>
+                    <th>Terminal</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.adjustment_note_rows %}
+                <tr>
+                    <td>{{ row.created_at|localdt }}</td>
+                    <td>{{ row.note_type|replace('_', ' ')|title }}</td>
+                    <td>{{ row.author_name or "-" }}</td>
+                    <td>{{ row.terminal_device_public_id or "-" }}</td>
+                    <td>{{ row.note_text or "-" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No customer-specific adjustment audit notes recorded yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

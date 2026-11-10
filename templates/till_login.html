@@ -1,0 +1,25 @@
+{% extends "till_base.html" %}
+{% block content %}
+<div class="panel" style="max-width: 520px; margin: 60px auto;">
+    <h1>Till Login</h1>
+    <div class="muted" style="margin-bottom: 18px;">Enter staff PIN to start the shift.</div>
+    {% if error %}
+    <div style="color: #b42318; margin-bottom: 12px;">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="{{ url_for('till_login_post') }}" class="grid">
+        <input type="password" name="pin_code" placeholder="Staff PIN" required autofocus>
+        <button type="submit">Login</button>
+    </form>
+    <div class="panel" style="margin-top: 18px; background: #f8fafc;">
+        <strong>Seed Staff</strong>
+        <table>
+            {% for row in staff_rows %}
+            <tr>
+                <td>{{ row.name }}</td>
+                <td>{{ row.pin_code }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</div>
+{% endblock %}

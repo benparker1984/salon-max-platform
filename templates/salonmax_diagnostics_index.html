@@ -1,0 +1,105 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<div class="stack">
+    {% if notice %}
+    <div class="alert warning">{{ notice }}</div>
+    {% endif %}
+
+    <div class="panel">
+        <h2>Diagnostics</h2>
+        <div class="muted">Direct owner-side entry into terminal diagnostics. Use this when you know a till needs attention and you want to jump straight to device health, version, licence, sync activity, and support notes.</div>
+    </div>
+
+    <div class="panel">
+        <form method="get" action="{{ url_for('salonmax_owner_diagnostics') }}" class="grid" style="grid-template-columns: 1.4fr auto; align-items:end;">
+            <div>
+                <label for="business_account_public_id">Business</label>
+                <select id="business_account_public_id" name="business_account_public_id">
+                    <option value="">All businesses</option>
+                    {% for business in snapshot.businesses %}
+                    <option value="{{ business.business_account_public_id }}" {% if snapshot.filters.business_account_public_id == business.business_account_public_id %}selected{% endif %}>{{ business.business_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <button type="submit">Refresh Diagnostics</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="grid cards">
+        <div class="panel">
+            <div class="muted">Tracked Terminals</div>
+            <div class="metric">{{ snapshot.terminal_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Current Versions</div>
+            <div class="metric">{{ snapshot.current_version_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Need Update</div>
+            <div class="metric">{{ snapshot.needs_update_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Unknown Version</div>
+            <div class="metric">{{ snapshot.unknown_version_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Sync Failing</div>
+            <div class="metric">{{ snapshot.sync_failing_count }}</div>
+        </div>
+        <div class="panel">
+            <div class="muted">Sync Pending</div>
+            <div class="metric">{{ snapshot.sync_pending_count }}</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Terminal Directory</h2>
+        {% if snapshot.terminals %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Terminal</th>
+                    <th>Business</th>
+                    <th>Reported</th>
+                    <th>Target</th>
+                    <th>Sync</th>
+                    <th>Status</th>
+                    <th>Last Seen</th>
+                    <th>Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in snapshot.terminals %}
+                <tr>
+                    <td>
+                        <div><strong>{{ row.terminal_name }}</strong></div>
+                        <div class="muted">{{ row.terminal_device_public_id }}</div>
+                    </td>
+                    <td>{{ row.business_name or row.business_account_public_id }}</td>
+                    <td>{{ row.reported_version or "Unknown" }}</td>
+                    <td>{{ row.desired_version or "-" }}</td>
+                    <td>
+                        <span class="tag {% if row.sync_status == 'healthy' %}{% elif row.sync_status == 'pending' %}warning{% else %}danger{% endif %}">
+                            {{ row.sync_label }}
+                        </span>
+                        <div class="muted">{{ row.sync_pending_count }} pending{% if row.sync_failed_count %} / {{ row.sync_failed_count }} failed{% endif %}</div>
+                    </td>
+                    <td>
+                        <span class="tag {% if row.version_status == 'current' %}{% elif row.version_status == 'neutral' %}neutral{% else %}warning{% endif %}">
+                            {{ row.version_label }}
+                        </span>
+                    </td>
+                    <td>{{ row.last_seen_at|localdt or "Never seen" }}</td>
+                    <td><a href="{{ url_for('salonmax_terminal_diagnostics', terminal_device_public_id=row.terminal_device_public_id) }}">Open Diagnostics</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="muted">No tracked terminals are available yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

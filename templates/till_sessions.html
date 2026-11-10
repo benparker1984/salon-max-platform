@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid" style="grid-template-columns: 2fr 1fr;">
+    <div class="panel">
+        <h1>Till Sessions</h1>
+        {% if notice %}
+        <div class="panel" style="padding:12px 16px; background:#ecfccb; color:#166534; box-shadow:none; margin-bottom:12px;">
+            {{ notice }}
+        </div>
+        {% endif %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Site</th>
+                    <th>Terminal</th>
+                    <th>Opened By</th>
+                    <th>Status</th>
+                    <th>Opening Float</th>
+                    <th>Expected</th>
+                    <th>Counted</th>
+                    <th>Variance</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in till_sessions %}
+                <tr>
+                    <td>{{ row.site_name }}</td>
+                    <td>{{ row.terminal_name }}</td>
+                    <td>{{ row.opened_by_name }}</td>
+                    <td>{{ row.status|title }}</td>
+                    <td>GBP {{ "%.2f"|format(row.opening_float) }}</td>
+                    <td>GBP {{ "%.2f"|format(row.expected_cash) }}</td>
+                    <td>GBP {{ "%.2f"|format(row.counted_cash) }}</td>
+                    <td>GBP {{ "%.2f"|format(row.variance) }}</td>
+                    <td>
+                        {% if row.status == "open" %}
+                        <form method="post" action="{{ url_for('close_till_session', session_id=row.id) }}" class="stack">
+                            <input type="number" step="0.01" min="0" name="counted_cash" placeholder="Counted cash" required>
+                            <select name="closed_by_user_id">
+                                {% for staff in staff_rows %}
+                                <option value="{{ staff.id }}">{{ staff.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="text" name="closing_notes" placeholder="Closing notes">
+                            <button type="submit">Close Till</button>
+                        </form>
+                        {% else %}
+                        {{ row.closed_by_name or "-" }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Open Till</h2>
+        <form method="post" action="{{ url_for('open_till_session') }}" class="stack">
+            <select name="site_id">
+                {% for site in sites %}
+                <option value="{{ site.id }}">{{ site.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="terminal_id">
+                {% for terminal in terminals %}
+                <option value="{{ terminal.id }}">{{ terminal.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="opened_by_user_id">
+                {% for staff in staff_rows %}
+                <option value="{{ staff.id }}">{{ staff.name }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" step="0.01" min="0" name="opening_float" placeholder="Opening float" required>
+            <button type="submit">Open Till Session</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

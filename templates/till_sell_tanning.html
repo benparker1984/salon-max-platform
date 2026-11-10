@@ -1,0 +1,57 @@
+{% extends "till_base.html" %}
+{% block content %}
+<div class="topbar">
+    <div>
+        <h1 style="margin: 0;">Sell Tanning</h1>
+        <div class="muted">{{ customer.first_name }} {{ customer.last_name }} | Till session #{{ till_session.id }}</div>
+    </div>
+    <div class="row">
+        <a class="buttonish" href="{{ url_for('till_customer_summary', customer_id=customer.id) }}">Back To Summary</a>
+        <a class="buttonish" href="{{ url_for('till_totals') }}">Totals And Cash Up</a>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns: 1fr 1fr;">
+    <div class="panel">
+        <div class="muted">Account Balance</div>
+        <div class="metric">GBP {{ "%.2f"|format(customer.account_balance) }}</div>
+    </div>
+    <div class="panel">
+        <div class="muted">Account Minutes</div>
+        <div class="metric">{{ customer.package_minutes }}</div>
+    </div>
+</div>
+
+<div class="panel" style="max-width: 760px;">
+    <form method="post" action="{{ url_for('till_sell_tanning_post', customer_id=customer.id) }}" class="grid">
+        <select name="site_id">
+            {% for site in sites %}
+            <option value="{{ site.id }}">{{ site.name }}</option>
+            {% endfor %}
+        </select>
+
+        <select name="device_id">
+            {% for device in devices %}
+            <option value="{{ device.id }}">{{ device.device_name }} (Site {{ device.site_id }})</option>
+            {% endfor %}
+        </select>
+
+        <select name="terminal_id">
+            {% for terminal in terminals %}
+            <option value="{{ terminal.id }}">{{ terminal.name }}</option>
+            {% endfor %}
+        </select>
+
+        <input type="number" min="1" max="20" name="minutes" placeholder="Minutes" required>
+
+        <select name="payment_method">
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+            <option value="account_balance">Account Balance</option>
+            <option value="package_minutes">Account Minutes</option>
+        </select>
+
+        <button type="submit">Complete Tanning Sale</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+    <h1>Pricing</h1>
+    <div class="muted" style="margin-bottom: 16px;">Update price per minute centrally here instead of reprogramming tills.</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Site</th>
+                <th>Device</th>
+                <th>Price Per Minute</th>
+                <th>Update</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rule in rules %}
+            <tr>
+                <td>{{ rule.site_name or "All Sites" }}</td>
+                <td>{{ rule.device_name or "Site Default" }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('update_pricing') }}" class="row">
+                        <input type="hidden" name="rule_id" value="{{ rule.id }}">
+                        <input type="number" step="0.01" min="0" name="price_per_minute" value="{{ "%.2f"|format(rule.price_per_minute) }}" style="width: 120px;">
+                </td>
+                <td>
+                        <button type="submit">Save</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
