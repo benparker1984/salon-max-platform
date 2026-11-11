@@ -1,0 +1,14 @@
+{
+  "id": "/salon/",
+  "name": "Salon Max",
+  "short_name": "Salon Max",
+  "start_url": "/salon/",
+  "scope": "/salon/",
+  "display": "standalone",
+  "background_color": "#0c1523",
+  "theme_color": "#0c1523",
+  "icons": [
+    {"src": "/static/salon-icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/static/salon-icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ]
+}

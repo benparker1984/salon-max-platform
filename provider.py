@@ -1,5 +1,6 @@
 from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, url_for
 import csv
+from decimal import Decimal, InvalidOperation
 import hashlib
 import hmac
 import json
@@ -11,12 +12,9 @@ from io import StringIO
 from pathlib import Path
 from email.message import EmailMessage
 import smtplib
-from urllib.parse import urlencode
-from urllib.request import Request as UrlRequest, urlopen
 from zoneinfo import ZoneInfo
-from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
-from storage import connect
+from storage import connect, postgres
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -86,23 +84,6 @@ def platform_login_redirect():
     return redirect(url_for("salonmax_platform_login", next=request.full_path.rstrip("?")))
 
 
-def gym_staff_session_key(business_account_public_id: str) -> str:
-    return f"gym_staff_authenticated:{business_account_public_id}"
-
-
-def gym_staff_password_configured(business_account_public_id: str) -> bool:
-    ensure_gym_staff_auth_table()
-    row = platform_query_one(
-        "select id from gym_staff_auth where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-    return row is not None
-
-
-def gym_staff_login_redirect(business_account_public_id: str):
-    return redirect(url_for("salonmax_gym_staff_login", business_account_public_id=business_account_public_id, next=request.full_path.rstrip("?")))
-
-
 @app.before_request
 def require_platform_owner_login():
     path = request.path or ""
@@ -115,61 +96,6 @@ def require_platform_owner_login():
     if session.get("platform_admin_authenticated") or session.get("salonmax_platform_authed"):
         return None
     return platform_login_redirect()
-
-
-def ensure_gym_staff_auth_table():
-    platform_execute(
-        """
-        create table if not exists gym_staff_auth (
-            id integer primary key autoincrement,
-            business_account_public_id text not null unique,
-            password_hash text not null,
-            updated_at text not null
-        )
-        """
-    )
-
-
-def ensure_gym_payment_settings_table():
-    platform_execute(
-        """
-        create table if not exists gym_payment_settings (
-            id integer primary key autoincrement,
-            business_account_public_id text not null unique,
-            provider text not null default 'stripe_connect',
-            provider_account_id text not null default '',
-            currency text not null default 'gbp',
-            application_fee_percent real not null default 0,
-            checkout_enabled integer not null default 0,
-            updated_at text not null
-        )
-        """
-    )
-
-
-def ensure_gym_checkout_events_table():
-    platform_execute(
-        """
-        create table if not exists gym_checkout_events (
-            id integer primary key autoincrement,
-            stripe_event_id text unique,
-            checkout_session_id text unique,
-            business_account_public_id text not null,
-            member_id text not null,
-            member_name text not null default '',
-            plan_id text not null,
-            plan_name text not null default '',
-            amount_total integer not null default 0,
-            currency text not null default 'gbp',
-            payment_status text not null default '',
-            checkout_status text not null default '',
-            event_type text not null default '',
-            raw_json text not null default '',
-            created_at text not null,
-            updated_at text not null
-        )
-        """
-    )
 
 
 def parse_utc_text(value):
@@ -801,7 +727,7 @@ def make_cloud_customer_public_id(business_account_public_id: str, local_custome
 
 
 def parse_customer_import_csv(raw_text: str) -> dict:
-    text = str(raw_text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = str(raw_text or "").lstrip("\ufeff").strip()
     if not text:
         return {
             "rows": [],
@@ -809,12 +735,13 @@ def parse_customer_import_csv(raw_text: str) -> dict:
             "skipped_count": 0,
             "warnings": ["No CSV data was provided."],
         }
-    reader = csv.DictReader(StringIO(text))
+    reader = csv.DictReader(StringIO(text, newline=""), strict=True)
     rows = []
     warnings = []
     skipped_count = 0
     error_count = 0
     row_number = 1
+    seen = set()
     for source_row in reader:
         row_number += 1
         if not source_row:
@@ -830,25 +757,42 @@ def parse_customer_import_csv(raw_text: str) -> dict:
         phone = normalized.get("phone") or normalized.get("mobile") or normalized.get("telephone") or ""
         email = normalized.get("email") or normalized.get("email_address") or ""
         notes = normalized.get("notes") or normalized.get("note") or ""
-        balance_text = normalized.get("balance") or normalized.get("account_balance") or normalized.get("credit_balance") or "0"
-        minutes_text = normalized.get("minutes") or normalized.get("package_minutes") or normalized.get("account_minutes") or "0"
-        if not any([first_name, last_name, customer_number, account_number, phone, email]):
+        balance_text = normalized.get("balance") or normalized.get("account_balance") or normalized.get("credit_balance")
+        minutes_text = normalized.get("minutes") or normalized.get("package_minutes") or normalized.get("account_minutes")
+        if not any(normalized.values()):
             skipped_count += 1
             continue
+        email = email.lower()
+        identities = {(key, value) for key, value in (
+            ("customer_number", customer_number), ("account_number", account_number), ("email", email)
+        ) if value}
         try:
-            balance = round(float(balance_text or 0), 2)
-        except ValueError:
+            if None in source_row or any(value is None for value in source_row.values()):
+                raise ValueError("wrong number of fields")
+            if not identities:
+                raise ValueError("provide a customer number, account number or email")
+            if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                raise ValueError("invalid email")
+            balance = Decimal(balance_text) if balance_text else None
+            if balance is not None and (not balance.is_finite() or abs(balance) > 1_000_000 or balance != round(balance, 2)):
+                raise ValueError("invalid balance")
+            minutes = int(minutes_text) if minutes_text else None
+            if minutes is not None and not 0 <= minutes <= 1_000_000:
+                raise ValueError("invalid minutes")
+        except InvalidOperation:
             error_count += 1
-            warnings.append(f"Row {row_number}: invalid balance '{balance_text}', defaulted to 0.00.")
-            balance = 0.0
-        try:
-            minutes = int(float(minutes_text or 0))
-        except ValueError:
+            warnings.append(f"Row {row_number}: invalid balance.")
+            continue
+        except ValueError as exc:
             error_count += 1
-            warnings.append(f"Row {row_number}: invalid minutes '{minutes_text}', defaulted to 0.")
-            minutes = 0
-        if not first_name and not last_name:
-            warnings.append(f"Row {row_number}: missing customer name, imported as unnamed record.")
+            message = "invalid minutes" if str(exc).startswith("invalid literal for int") else str(exc)
+            warnings.append(f"Row {row_number}: {message}.")
+            continue
+        if identities & seen:
+            skipped_count += 1
+            warnings.append(f"Row {row_number}: duplicate identifier within the CSV.")
+            continue
+        seen.update(identities)
         rows.append(
             {
                 "customer_number": customer_number,
@@ -885,26 +829,23 @@ def upsert_cloud_import_customer(
     phone = str(row.get("phone") or "").strip()
     email = str(row.get("email") or "").strip()
     notes = str(row.get("notes") or "").strip()
-    target_balance = round(float(row.get("current_balance") or 0), 2)
-    target_minutes = int(row.get("minutes_available") or 0)
-    lookup_value = customer_number or account_number or email or f"{first_name}-{last_name}"
-    customer_public_id = make_public_id("cust", f"{business_account_public_id}-{lookup_value}")
-    existing = None
-    if customer_number:
-        existing = db.execute(
-            "select * from cloud_customers where business_account_public_id = ? and customer_number = ?",
-            (business_account_public_id, customer_number),
-        ).fetchone()
-    if existing is None and account_number:
-        existing = db.execute(
-            "select * from cloud_customers where business_account_public_id = ? and account_number = ?",
-            (business_account_public_id, account_number),
-        ).fetchone()
-    if existing is None and email:
-        existing = db.execute(
-            "select * from cloud_customers where business_account_public_id = ? and email = ?",
-            (business_account_public_id, email),
-        ).fetchone()
+    target_balance = row.get("current_balance")
+    target_minutes = row.get("minutes_available")
+    customer_public_id = "cust_import_" + os.urandom(16).hex()
+    matches = db.execute(
+        """
+        select * from cloud_customers
+        where business_account_public_id = ? and (
+            (customer_number <> '' and customer_number = ?)
+            or (account_number <> '' and account_number = ?)
+            or (email <> '' and lower(email) = ?)
+        )
+        """,
+        (business_account_public_id, customer_number, account_number, email),
+    ).fetchall()
+    if len(matches) > 1:
+        return {"conflict": True}
+    existing = matches[0] if matches else None
 
     if existing is None:
         db.execute(
@@ -948,18 +889,18 @@ def upsert_cloud_import_customer(
                 phone = ?,
                 email = ?,
                 notes = ?,
-                status = 'active',
                 updated_at = current_timestamp
-            where customer_public_id = ?
+            where business_account_public_id = ? and customer_public_id = ?
             """,
             (
-                customer_number,
-                account_number,
-                first_name,
-                last_name,
-                phone,
-                email,
-                notes,
+                customer_number or existing["customer_number"],
+                account_number or existing["account_number"],
+                first_name or existing["first_name"],
+                last_name or existing["last_name"],
+                phone or existing["phone"],
+                email or existing["email"],
+                notes or existing["notes"],
+                business_account_public_id,
                 customer_public_id,
             ),
         )
@@ -969,8 +910,8 @@ def upsert_cloud_import_customer(
     balance_summary = ensure_cloud_customer_balance_summary(db, business_account_public_id, customer_public_id)
     current_minutes = int(minute_summary["minutes_available"] or 0)
     current_balance = round(float(balance_summary["current_balance"] or 0), 2)
-    minute_delta = target_minutes - current_minutes
-    balance_delta = round(target_balance - current_balance, 2)
+    minute_delta = target_minutes - current_minutes if target_minutes is not None else 0
+    balance_delta = round(float(target_balance) - current_balance, 2) if target_balance is not None else 0
     occurred_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     if minute_delta != 0:
@@ -1002,9 +943,9 @@ def upsert_cloud_import_customer(
             update cloud_customer_minute_summary
             set minutes_available = ?,
                 updated_at = current_timestamp
-            where customer_public_id = ?
+            where business_account_public_id = ? and customer_public_id = ?
             """,
-            (target_minutes, customer_public_id),
+            (target_minutes, business_account_public_id, customer_public_id),
         )
     if balance_delta != 0:
         db.execute(
@@ -1036,9 +977,9 @@ def upsert_cloud_import_customer(
             update cloud_customer_balance_summary
             set current_balance = ?,
                 updated_at = current_timestamp
-            where customer_public_id = ?
+            where business_account_public_id = ? and customer_public_id = ?
             """,
-            (f"{target_balance:.2f}", customer_public_id),
+            (f"{target_balance:.2f}", business_account_public_id, customer_public_id),
         )
     return {"created": created, "updated": not created, "customer_public_id": customer_public_id}
 
@@ -3326,186 +3267,6 @@ def csv_download_response(filename: str, headers: list[str], rows: list[list[obj
     response = Response(buffer.getvalue(), mimetype="text/csv; charset=utf-8")
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
-
-
-def salonmax_owner_stats_snapshot(*, business_account_public_id: str = "", days: int = 30):
-    seed_local_business_account_record()
-    selected_business_id = str(business_account_public_id or "").strip()
-    try:
-        selected_days = max(1, min(int(days), 365))
-    except (TypeError, ValueError):
-        selected_days = 30
-
-    business_rows = platform_query_all(
-        """
-        select business_account_public_id, business_name
-        from cloud_business_accounts
-        order by business_name, business_account_public_id
-        """
-    )
-    businesses = [
-        {
-            "business_account_public_id": str(row["business_account_public_id"] or ""),
-            "business_name": str(row["business_name"] or ""),
-        }
-        for row in business_rows
-    ]
-    business_name_map = {
-        str(row["business_account_public_id"] or ""): str(row["business_name"] or "")
-        for row in business_rows
-    }
-    terminal_rows = platform_query_all(
-        """
-        select terminal_device_public_id, terminal_name, business_account_public_id
-        from cloud_terminal_registry
-        where management_status != 'retired'
-        order by terminal_name, terminal_device_public_id
-        """
-    )
-    terminal_name_map = {
-        str(row["terminal_device_public_id"] or ""): str(row["terminal_name"] or "")
-        for row in terminal_rows
-    }
-
-    cutoff_text = (datetime.now(ZoneInfo("UTC")) - timedelta(days=selected_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    event_sql = """
-        select *
-        from cloud_sync_events
-        where event_type = 'transaction.completed'
-          and occurred_at >= ?
-    """
-    event_params = [cutoff_text]
-    if selected_business_id:
-        event_sql += " and business_account_public_id = ?"
-        event_params.append(selected_business_id)
-    event_sql += " order by occurred_at desc, id desc"
-    event_rows = platform_query_all(event_sql, tuple(event_params))
-
-    total_sales = 0.0
-    transaction_count = 0
-    cash_total = 0.0
-    card_total = 0.0
-    package_total = 0.0
-    tanning_total = 0.0
-    retail_total = 0.0
-    account_balance_total = 0.0
-    package_minutes_count = 0
-    account_minutes_used_total = 0
-    daily_totals = {}
-    business_stats = {}
-    terminal_stats = {}
-
-    for event in event_rows:
-        payload = {}
-        try:
-            payload = json.loads(event["payload_json"] or "{}")
-            if not isinstance(payload, dict):
-                payload = {}
-        except (TypeError, ValueError, json.JSONDecodeError):
-            payload = {}
-        transaction_type = str(payload.get("transaction_type") or "").strip()
-        payment_method = str(payload.get("payment_method") or "").strip()
-        total_amount = float(payload.get("total_amount") or 0.0)
-        occurred_at = str(event["occurred_at"] or "")
-        day_key = occurred_at[:10] if len(occurred_at) >= 10 else occurred_at
-        business_id = str(event["business_account_public_id"] or "")
-        terminal_id = str(event["terminal_device_public_id"] or "")
-
-        transaction_count += 1
-        total_sales += total_amount
-        if day_key:
-            daily_totals[day_key] = round(float(daily_totals.get(day_key, 0.0)) + total_amount, 2)
-        if payment_method == "cash":
-            cash_total += total_amount
-        elif payment_method == "card":
-            card_total += total_amount
-        elif payment_method == "account_balance":
-            account_balance_total += total_amount
-        elif payment_method == "package_minutes":
-            package_minutes_count += 1
-        if transaction_type == "package_sale":
-            package_total += total_amount
-        elif transaction_type == "tanning_sale":
-            tanning_total += total_amount
-            account_minutes_used_total += int(payload.get("account_minutes_used") or 0)
-        elif transaction_type == "retail_sale":
-            retail_total += total_amount
-
-        if business_id not in business_stats:
-            business_stats[business_id] = {
-                "business_account_public_id": business_id,
-                "business_name": business_name_map.get(business_id, business_id),
-                "transaction_count": 0,
-                "sales_total": 0.0,
-                "cash_total": 0.0,
-                "card_total": 0.0,
-                "package_total": 0.0,
-                "tanning_total": 0.0,
-            }
-        business_stats[business_id]["transaction_count"] += 1
-        business_stats[business_id]["sales_total"] += total_amount
-        if payment_method == "cash":
-            business_stats[business_id]["cash_total"] += total_amount
-        if payment_method == "card":
-            business_stats[business_id]["card_total"] += total_amount
-        if transaction_type == "package_sale":
-            business_stats[business_id]["package_total"] += total_amount
-        if transaction_type == "tanning_sale":
-            business_stats[business_id]["tanning_total"] += total_amount
-
-        if terminal_id not in terminal_stats:
-            terminal_stats[terminal_id] = {
-                "terminal_device_public_id": terminal_id,
-                "terminal_name": terminal_name_map.get(terminal_id, terminal_id),
-                "business_name": business_name_map.get(business_id, business_id),
-                "transaction_count": 0,
-                "sales_total": 0.0,
-                "cash_total": 0.0,
-                "card_total": 0.0,
-            }
-        terminal_stats[terminal_id]["transaction_count"] += 1
-        terminal_stats[terminal_id]["sales_total"] += total_amount
-        if payment_method == "cash":
-            terminal_stats[terminal_id]["cash_total"] += total_amount
-        if payment_method == "card":
-            terminal_stats[terminal_id]["card_total"] += total_amount
-
-    daily_rows = [
-        {"day": day, "sales_total": daily_totals[day]}
-        for day in sorted(daily_totals.keys(), reverse=True)
-    ][:31]
-    business_rows_summary = sorted(
-        business_stats.values(),
-        key=lambda item: (float(item["sales_total"]), int(item["transaction_count"])),
-        reverse=True,
-    )
-    terminal_rows_summary = sorted(
-        terminal_stats.values(),
-        key=lambda item: (float(item["sales_total"]), int(item["transaction_count"])),
-        reverse=True,
-    )
-
-    return {
-        "platform_name": "Salon Max",
-        "filters": {
-            "business_account_public_id": selected_business_id,
-            "days": selected_days,
-        },
-        "businesses": businesses,
-        "transaction_count": transaction_count,
-        "total_sales": total_sales,
-        "cash_total": cash_total,
-        "card_total": card_total,
-        "account_balance_total": account_balance_total,
-        "package_total": package_total,
-        "tanning_total": tanning_total,
-        "retail_total": retail_total,
-        "package_minutes_count": package_minutes_count,
-        "account_minutes_used_total": account_minutes_used_total,
-        "daily_rows": daily_rows,
-        "business_rows": business_rows_summary[:20],
-        "terminal_rows": terminal_rows_summary[:20],
-    }
 
 
 def salonmax_owner_analytics_snapshot(*, business_account_public_id: str = "", days: int = 30):
@@ -5906,20 +5667,6 @@ def salonmax_owner_queries_customers_export():
     return csv_download_response("salonmax-customers-export.csv", headers, rows)
 
 
-@app.route("/platform/stats")
-def salonmax_owner_stats():
-    snapshot = salonmax_owner_stats_snapshot(
-        business_account_public_id=request.args.get("business_account_public_id", "").strip(),
-        days=request.args.get("days", "30").strip() or 30,
-    )
-    return render_template(
-        "salonmax_stats.html",
-        snapshot=snapshot,
-        title="Salon Max Stats",
-        notice=request.args.get("notice", "").strip(),
-    )
-
-
 @app.route("/platform/analytics")
 def salonmax_owner_analytics():
     snapshot = salonmax_owner_analytics_snapshot(
@@ -5944,786 +5691,6 @@ def salonmax_owner_customer_insights():
         "salonmax_customer_insights.html",
         snapshot=snapshot,
         title="Salon Max Customer Insights",
-        notice=request.args.get("notice", "").strip(),
-    )
-
-
-def salonmax_owner_gyms_snapshot():
-    ensure_platform_sync_tables()
-    business_rows = platform_query_all(
-        """
-        select *
-        from cloud_business_accounts
-        where status != 'deleted'
-          and coalesce(product_type, 'salon') = 'gym'
-        order by business_name
-        """
-    )
-    rows = []
-    for business in business_rows:
-        business_id = str(business["business_account_public_id"] or "")
-        site_count = int((platform_query_one(
-            "select count(*) as value from cloud_business_sites where business_account_public_id = ? and status != 'deleted'",
-            (business_id,),
-        )["value"]) or 0)
-        terminal_count = int((platform_query_one(
-            "select count(*) as value from cloud_terminal_registry where business_account_public_id = ? and management_status != 'deleted'",
-            (business_id,),
-        )["value"]) or 0)
-        active_licence_count = int((platform_query_one(
-            "select count(*) as value from cloud_device_licences where business_account_public_id = ? and licence_status = 'active'",
-            (business_id,),
-        )["value"]) or 0)
-        rows.append({
-            "business_account_public_id": business_id,
-            "business_name": business["business_name"],
-            "contact_name": business["contact_name"],
-            "contact_email": business["contact_email"],
-            "contact_phone": business["contact_phone"],
-            "city": business["city"],
-            "postcode": business["postcode"],
-            "status": business["status"],
-            "subscription_status": business["subscription_status"],
-            "monthly_fee": business["monthly_fee"] or "100",
-            "site_count": site_count,
-            "terminal_count": terminal_count,
-            "active_licence_count": active_licence_count,
-            "gym_module_status": "Ready to configure" if terminal_count else "Planning",
-        })
-
-    return {
-        "platform_name": "Salon Max",
-        "business_count": len(rows),
-        "ready_count": sum(1 for row in rows if row["terminal_count"]),
-        "rows": rows,
-    }
-
-
-def salonmax_business_gym_access_snapshot(business_account_public_id: str):
-    ensure_platform_sync_tables()
-    ensure_gym_payment_settings_table()
-    business = platform_query_one(
-        "select * from cloud_business_accounts where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-    if business is None:
-        return None
-
-    sites = platform_query_all(
-        """
-        select site_public_id, site_name, site_code, status
-        from cloud_business_sites
-        where business_account_public_id = ?
-          and status != 'deleted'
-        order by site_name
-        """,
-        (business_account_public_id,),
-    )
-    terminals = platform_query_all(
-        """
-        select terminal_device_public_id, terminal_name, site_public_id, management_status, sync_status, last_seen_at, app_version_reported
-        from cloud_terminal_registry
-        where business_account_public_id = ?
-          and management_status != 'deleted'
-        order by terminal_name
-        """,
-        (business_account_public_id,),
-    )
-    licences = platform_query_all(
-        """
-        select terminal_device_public_id, licence_status, expires_at, last_check_in_at
-        from cloud_device_licences
-        where business_account_public_id = ?
-        order by last_check_in_at desc
-        """,
-        (business_account_public_id,),
-    )
-    classes = [
-        {"name": "FB Power", "schedule": "Mon 06:00, Mon 09:30, Mon 18:30", "price": "18", "length": "4 weeks"},
-        {"name": "Boxfit", "schedule": "Tue 09:30, Tue 18:30", "price": "18", "length": "4 weeks"},
-        {"name": "Pilates", "schedule": "Mon 10:30, Thu 18:30", "price": "18", "length": "4 weeks"},
-        {"name": "Boot camp", "schedule": "Every day, three sessions per day", "price": "18", "length": "6 weeks"},
-    ]
-    payment_settings = platform_query_one(
-        "select * from gym_payment_settings where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-    if payment_settings is None:
-        payment_settings = {
-            "provider": "stripe_connect",
-            "provider_account_id": "",
-            "currency": "gbp",
-            "application_fee_percent": 0,
-            "checkout_enabled": 0,
-            "updated_at": "",
-        }
-
-    return {
-        "platform_name": "Salon Max",
-        "business_account_public_id": business_account_public_id,
-        "business_name": business["business_name"],
-        "contact_name": business["contact_name"],
-        "contact_email": business["contact_email"],
-        "contact_phone": business["contact_phone"],
-        "subscription_status": business["subscription_status"],
-        "account_status": business["status"],
-        "monthly_fee": business["monthly_fee"] or "100",
-        "city": business["city"],
-        "postcode": business["postcode"],
-        "sites": [dict(row) for row in sites],
-        "terminals": [dict(row) for row in terminals],
-        "licences": [dict(row) for row in licences],
-        "classes": classes,
-        "member_count": 0,
-        "active_member_count": 0,
-        "expired_member_count": 0,
-        "door_device_count": len(terminals),
-        "signup_url": f"/gym/{business_account_public_id}/join",
-        "module_stage": "Prototype merged into owner platform",
-        "payment_settings": dict(payment_settings),
-        "stripe_secret_configured": bool(os.environ.get("SALONMAX_STRIPE_SECRET_KEY", "").strip()),
-    }
-
-
-def salonmax_public_gym_snapshot(business_account_public_id: str):
-    snapshot = salonmax_business_gym_access_snapshot(business_account_public_id)
-    if snapshot is None:
-        return None
-
-    brand_name = str(snapshot["business_name"] or "").strip()
-    if not brand_name or brand_name.lower().startswith(("test", "imported biz_test")):
-        brand_name = "KADO Fitness"
-
-    return {
-        **snapshot,
-        "brand_name": brand_name,
-        "hero_title": f"Join {brand_name}",
-        "tagline": "Women-only functional fitness with no booking and no contract.",
-        "monthly_price": "30",
-        "payg_price": "7",
-        "features": ["No need to book", "No contract", "Women only"],
-    }
-
-
-@app.route("/platform/gyms")
-def salonmax_owner_gyms():
-    return render_template(
-        "salonmax_gyms.html",
-        snapshot=salonmax_owner_gyms_snapshot(),
-        title="Salon Max Gyms",
-        notice=request.args.get("notice", "").strip(),
-    )
-
-
-@app.post("/platform/gyms/create")
-def salonmax_create_gym_business():
-    ensure_platform_sync_tables()
-    business_name = request.form.get("business_name", "").strip()
-    subscription_status = request.form.get("subscription_status", "").strip() or "trial"
-    contact_name = request.form.get("contact_name", "").strip()
-    contact_email = request.form.get("contact_email", "").strip()
-    contact_phone = request.form.get("contact_phone", "").strip()
-    city = request.form.get("city", "").strip()
-    postcode = request.form.get("postcode", "").strip()
-    monthly_fee = request.form.get("monthly_fee", "").strip() or "100"
-    notes = request.form.get("notes", "").strip()
-    if not business_name:
-        return redirect(url_for("salonmax_owner_gyms", notice="Gym business name is required."))
-
-    business_account_public_id = make_public_id("gym", business_name)
-    suffix = 2
-    while platform_query_one(
-        "select id from cloud_business_accounts where business_account_public_id = ?",
-        (business_account_public_id,),
-    ) is not None:
-        business_account_public_id = f"{make_public_id('gym', business_name)}-{suffix}"
-        suffix += 1
-
-    platform_execute(
-        """
-        insert into cloud_business_accounts (
-            business_account_public_id,
-            business_name,
-            product_type,
-            status,
-            subscription_plan,
-            subscription_status,
-            contact_name,
-            contact_email,
-            contact_phone,
-            city,
-            postcode,
-            monthly_fee,
-            notes
-        ) values (?, ?, 'gym', 'active', 'gym_access', ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            business_account_public_id,
-            business_name,
-            subscription_status,
-            contact_name,
-            contact_email,
-            contact_phone,
-            city,
-            postcode,
-            monthly_fee,
-            notes,
-        ),
-    )
-    return redirect(
-        url_for(
-            "salonmax_owner_business_gym_access",
-            business_account_public_id=business_account_public_id,
-            notice="Gym business created.",
-        )
-    )
-
-
-@app.route("/kado")
-def kado_public_gym_site():
-    business_account_public_id = os.environ.get("KADO_GYM_BUSINESS_ID", "biz_test-2").strip() or "biz_test-2"
-    return redirect(url_for("salonmax_public_gym_site", business_account_public_id=business_account_public_id))
-
-
-@app.route("/gym/<business_account_public_id>/join")
-@app.route("/gym/<business_account_public_id>/customer")
-def salonmax_public_gym_site(business_account_public_id: str):
-    return salonmax_gym_surface(business_account_public_id, "customer")
-
-
-@app.route("/gym/<business_account_public_id>/reception")
-def salonmax_gym_reception_site(business_account_public_id: str):
-    if not session.get(gym_staff_session_key(business_account_public_id)):
-        return gym_staff_login_redirect(business_account_public_id)
-    return salonmax_gym_surface(business_account_public_id, "reception")
-
-
-@app.route("/gym/<business_account_public_id>/staff")
-def salonmax_gym_staff_site(business_account_public_id: str):
-    if not session.get(gym_staff_session_key(business_account_public_id)):
-        return gym_staff_login_redirect(business_account_public_id)
-    return salonmax_gym_surface(business_account_public_id, "staff")
-
-
-@app.route("/gym/<business_account_public_id>/demo")
-def salonmax_gym_demo_site(business_account_public_id: str):
-    if not session.get(gym_staff_session_key(business_account_public_id)):
-        return gym_staff_login_redirect(business_account_public_id)
-    return salonmax_gym_surface(business_account_public_id, "all")
-
-
-@app.route("/gym/<business_account_public_id>/staff-login", methods=["GET", "POST"])
-def salonmax_gym_staff_login(business_account_public_id: str):
-    snapshot = salonmax_public_gym_snapshot(business_account_public_id)
-    if snapshot is None:
-        return json_error("GYM_NOT_FOUND", "No gym signup site was found for that business account.", status=404)
-
-    ensure_gym_staff_auth_table()
-    next_url = request.values.get("next", url_for("salonmax_gym_staff_site", business_account_public_id=business_account_public_id)).strip()
-    if not next_url.startswith("/") or next_url.startswith("//"):
-        next_url = url_for("salonmax_gym_staff_site", business_account_public_id=business_account_public_id)
-
-    notice = request.args.get("notice", "").strip()
-    auth_row = platform_query_one(
-        "select password_hash from gym_staff_auth where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-
-    if request.method == "POST":
-        password = request.form.get("password", "")
-        if auth_row is None:
-            notice = "Staff password is not set yet. Ask Salon Max to set or reset it from the platform."
-        elif check_password_hash(auth_row["password_hash"], password):
-            session[gym_staff_session_key(business_account_public_id)] = True
-            session[f"gym_staff_business_name:{business_account_public_id}"] = snapshot["brand_name"]
-            return redirect(next_url)
-        else:
-            notice = "Login failed. Check the gym staff password."
-
-    return render_template(
-        "gym_staff_login.html",
-        snapshot=snapshot,
-        notice=notice,
-        next_url=next_url,
-        password_configured=auth_row is not None,
-    )
-
-
-@app.route("/gym/<business_account_public_id>/staff-logout")
-def salonmax_gym_staff_logout(business_account_public_id: str):
-    session.pop(gym_staff_session_key(business_account_public_id), None)
-    session.pop(f"gym_staff_business_name:{business_account_public_id}", None)
-    return redirect(url_for("salonmax_gym_staff_login", business_account_public_id=business_account_public_id, notice="Signed out."))
-
-
-@app.post("/gym/<business_account_public_id>/staff-password")
-def salonmax_gym_staff_change_password(business_account_public_id: str):
-    if not session.get(gym_staff_session_key(business_account_public_id)):
-        return gym_staff_login_redirect(business_account_public_id)
-
-    current_password = request.form.get("current_password", "")
-    new_password = request.form.get("new_password", "")
-    confirm_password = request.form.get("confirm_password", "")
-    auth_row = platform_query_one(
-        "select password_hash from gym_staff_auth where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-    if auth_row is None:
-        return redirect(url_for("salonmax_gym_staff_site", business_account_public_id=business_account_public_id, notice="Staff password is not set yet. Ask Salon Max to reset it."))
-    if not check_password_hash(auth_row["password_hash"], current_password):
-        return redirect(url_for("salonmax_gym_staff_site", business_account_public_id=business_account_public_id, notice="Current password was not correct."))
-    if len(new_password) < 8:
-        return redirect(url_for("salonmax_gym_staff_site", business_account_public_id=business_account_public_id, notice="New staff password must be at least 8 characters."))
-    if new_password != confirm_password:
-        return redirect(url_for("salonmax_gym_staff_site", business_account_public_id=business_account_public_id, notice="New password and confirmation did not match."))
-
-    platform_execute(
-        """
-        update gym_staff_auth
-        set password_hash = ?, updated_at = ?
-        where business_account_public_id = ?
-        """,
-        (generate_password_hash(new_password), now_utc_text(), business_account_public_id),
-    )
-    return redirect(url_for("salonmax_gym_staff_site", business_account_public_id=business_account_public_id, notice="Staff password changed."))
-
-
-@app.post("/platform/business/<business_account_public_id>/gym-access/staff-password")
-def salonmax_owner_reset_gym_staff_password(business_account_public_id: str):
-    snapshot = salonmax_business_gym_access_snapshot(business_account_public_id)
-    if snapshot is None:
-        return json_error("BUSINESS_NOT_FOUND", "No Salon Max business account was found for that id.", status=404)
-
-    password = request.form.get("staff_password", "").strip()
-    confirm_password = request.form.get("confirm_staff_password", "").strip()
-    if len(password) < 8:
-        return redirect(url_for("salonmax_owner_business_gym_access", business_account_public_id=business_account_public_id, notice="Staff password must be at least 8 characters."))
-    if password != confirm_password:
-        return redirect(url_for("salonmax_owner_business_gym_access", business_account_public_id=business_account_public_id, notice="Staff password and confirmation did not match."))
-
-    ensure_gym_staff_auth_table()
-    existing = platform_query_one(
-        "select id from gym_staff_auth where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-    if existing is None:
-        platform_execute(
-            """
-            insert into gym_staff_auth (business_account_public_id, password_hash, updated_at)
-            values (?, ?, ?)
-            """,
-            (business_account_public_id, generate_password_hash(password), now_utc_text()),
-        )
-        notice = "Gym staff password set."
-    else:
-        platform_execute(
-            """
-            update gym_staff_auth
-            set password_hash = ?, updated_at = ?
-            where business_account_public_id = ?
-            """,
-            (generate_password_hash(password), now_utc_text(), business_account_public_id),
-        )
-        notice = "Gym staff password reset."
-    session.pop(gym_staff_session_key(business_account_public_id), None)
-    return redirect(url_for("salonmax_owner_business_gym_access", business_account_public_id=business_account_public_id, notice=notice))
-
-
-@app.post("/platform/business/<business_account_public_id>/gym-access/payment-settings")
-def salonmax_owner_save_gym_payment_settings(business_account_public_id: str):
-    snapshot = salonmax_business_gym_access_snapshot(business_account_public_id)
-    if snapshot is None:
-        return json_error("BUSINESS_NOT_FOUND", "No Salon Max business account was found for that id.", status=404)
-
-    provider_account_id = request.form.get("provider_account_id", "").strip()
-    currency = (request.form.get("currency", "gbp").strip() or "gbp").lower()
-    if not re.fullmatch(r"[a-z]{3}", currency):
-        return redirect(url_for("salonmax_owner_business_gym_access", business_account_public_id=business_account_public_id, notice="Currency must be a three-letter code such as gbp."))
-    try:
-        application_fee_percent = max(0, min(100, float(request.form.get("application_fee_percent", "0") or 0)))
-    except ValueError:
-        application_fee_percent = 0
-    checkout_enabled = 1 if request.form.get("checkout_enabled") == "1" else 0
-
-    ensure_gym_payment_settings_table()
-    existing = platform_query_one(
-        "select id from gym_payment_settings where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-    params = (
-        "stripe_connect",
-        provider_account_id,
-        currency,
-        application_fee_percent,
-        checkout_enabled,
-        now_utc_text(),
-        business_account_public_id,
-    )
-    if existing is None:
-        platform_execute(
-            """
-            insert into gym_payment_settings (
-                provider,
-                provider_account_id,
-                currency,
-                application_fee_percent,
-                checkout_enabled,
-                updated_at,
-                business_account_public_id
-            ) values (?, ?, ?, ?, ?, ?, ?)
-            """,
-            params,
-        )
-    else:
-        platform_execute(
-            """
-            update gym_payment_settings
-            set provider = ?,
-                provider_account_id = ?,
-                currency = ?,
-                application_fee_percent = ?,
-                checkout_enabled = ?,
-                updated_at = ?
-            where business_account_public_id = ?
-            """,
-            params,
-        )
-    return redirect(url_for("salonmax_owner_business_gym_access", business_account_public_id=business_account_public_id, notice="Gym payment settings saved."))
-
-
-def salonmax_gym_surface(business_account_public_id: str, surface: str):
-    snapshot = salonmax_public_gym_snapshot(business_account_public_id)
-    if snapshot is None:
-        return json_error("GYM_NOT_FOUND", "No gym signup site was found for that business account.", status=404)
-    return render_template(
-        "gym_access_portal.html",
-        snapshot=snapshot,
-        title=f"Join {snapshot['brand_name']}",
-        surface=surface,
-        notice=request.args.get("notice", "").strip(),
-    )
-
-
-@app.post("/gym/<business_account_public_id>/checkout/session")
-def salonmax_gym_create_checkout_session(business_account_public_id: str):
-    snapshot = salonmax_public_gym_snapshot(business_account_public_id)
-    if snapshot is None:
-        return json_error("GYM_NOT_FOUND", "No gym signup site was found for that business account.", status=404)
-
-    payload = request.get_json(silent=True) or {}
-    member_id = str(payload.get("member_id") or "").strip()
-    member_name = str(payload.get("member_name") or "").strip()
-    member_email = str(payload.get("member_email") or "").strip()
-    plan_id = str(payload.get("plan_id") or "").strip()
-    plan_name = str(payload.get("plan_name") or "").strip()
-    billing = str(payload.get("billing") or "one-off").strip()
-    try:
-        amount = max(0, float(payload.get("amount") or 0))
-    except (TypeError, ValueError):
-        amount = 0
-
-    if not member_id or not plan_id or not plan_name or amount <= 0:
-        return json_error("CHECKOUT_BAD_REQUEST", "Member, package, and amount are required.", status=400)
-
-    settings = gym_payment_settings(business_account_public_id)
-    stripe_secret_key = os.environ.get("SALONMAX_STRIPE_SECRET_KEY", "").strip()
-    if not settings["checkout_enabled"] or not settings["provider_account_id"] or not stripe_secret_key:
-        return jsonify({
-            "ok": True,
-            "payment_mode": "setup_required",
-            "message": "Real checkout is not enabled yet. Add Stripe secret key and the gym connected account id in Salon Max.",
-            "demo_allowed": True,
-        })
-
-    base_url = request.host_url.rstrip("/")
-    success_url = f"{base_url}{url_for('salonmax_public_gym_site', business_account_public_id=business_account_public_id)}?checkout=success&member_id={member_id}&plan_id={plan_id}&session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{base_url}{url_for('salonmax_public_gym_site', business_account_public_id=business_account_public_id)}?checkout=cancelled&member_id={member_id}&plan_id={plan_id}"
-    unit_amount = int(round(amount * 100))
-    application_fee_amount = int(round(unit_amount * float(settings["application_fee_percent"] or 0) / 100))
-
-    params = {
-        "mode": "subscription" if billing == "monthly" else "payment",
-        "success_url": success_url,
-        "cancel_url": cancel_url,
-        "line_items[0][price_data][currency]": settings["currency"],
-        "line_items[0][price_data][product_data][name]": plan_name,
-        "line_items[0][price_data][unit_amount]": str(unit_amount),
-        "line_items[0][quantity]": "1",
-        "client_reference_id": f"{business_account_public_id}:{member_id}:{plan_id}",
-        "metadata[business_account_public_id]": business_account_public_id,
-        "metadata[member_id]": member_id,
-        "metadata[member_name]": member_name,
-        "metadata[plan_id]": plan_id,
-        "metadata[plan_name]": plan_name,
-    }
-    if member_email:
-        params["customer_email"] = member_email
-    if billing == "monthly":
-        params["line_items[0][price_data][recurring][interval]"] = "month"
-        if application_fee_amount:
-            params["subscription_data[application_fee_percent]"] = str(float(settings["application_fee_percent"]))
-    elif application_fee_amount:
-        params["payment_intent_data[application_fee_amount]"] = str(application_fee_amount)
-
-    try:
-        checkout_session = create_stripe_checkout_session(
-            stripe_secret_key=stripe_secret_key,
-            connected_account_id=settings["provider_account_id"],
-            params=params,
-        )
-    except Exception as exc:
-        return json_error("STRIPE_CHECKOUT_FAILED", f"Stripe checkout could not be started: {exc}", status=502)
-
-    return jsonify({
-        "ok": True,
-        "payment_mode": "stripe_checkout",
-        "checkout_url": checkout_session.get("url"),
-        "checkout_session_id": checkout_session.get("id"),
-    })
-
-
-@app.get("/gym/<business_account_public_id>/checkout/session/<checkout_session_id>")
-def salonmax_gym_checkout_session_status(business_account_public_id: str, checkout_session_id: str):
-    snapshot = salonmax_public_gym_snapshot(business_account_public_id)
-    if snapshot is None:
-        return json_error("GYM_NOT_FOUND", "No gym signup site was found for that business account.", status=404)
-
-    ensure_gym_checkout_events_table()
-    event_row = platform_query_one(
-        """
-        select *
-        from gym_checkout_events
-        where business_account_public_id = ?
-          and checkout_session_id = ?
-        """,
-        (business_account_public_id, checkout_session_id),
-    )
-    if event_row is not None and str(event_row["payment_status"]).lower() == "paid":
-        return jsonify({
-            "ok": True,
-            "confirmed": True,
-            "source": "webhook",
-            "member_id": event_row["member_id"],
-            "member_name": event_row["member_name"],
-            "plan_id": event_row["plan_id"],
-            "plan_name": event_row["plan_name"],
-            "payment_status": event_row["payment_status"],
-        })
-
-    settings = gym_payment_settings(business_account_public_id)
-    stripe_secret_key = os.environ.get("SALONMAX_STRIPE_SECRET_KEY", "").strip()
-    if not stripe_secret_key or not settings["provider_account_id"]:
-        return jsonify({"ok": True, "confirmed": False, "message": "Stripe is not configured yet."})
-
-    try:
-        checkout_session = retrieve_stripe_checkout_session(
-            stripe_secret_key=stripe_secret_key,
-            connected_account_id=settings["provider_account_id"],
-            checkout_session_id=checkout_session_id,
-        )
-    except Exception as exc:
-        return json_error("STRIPE_SESSION_LOOKUP_FAILED", f"Stripe checkout session could not be checked: {exc}", status=502)
-
-    metadata = checkout_session.get("metadata") or {}
-    if metadata.get("business_account_public_id") != business_account_public_id:
-        return json_error("CHECKOUT_BUSINESS_MISMATCH", "Stripe session does not belong to this gym.", status=403)
-
-    if checkout_session.get("payment_status") == "paid":
-        save_gym_checkout_event_from_session("checkout.session.confirmed", checkout_session)
-        return jsonify({
-            "ok": True,
-            "confirmed": True,
-            "source": "stripe_lookup",
-            "member_id": metadata.get("member_id"),
-            "member_name": metadata.get("member_name"),
-            "plan_id": metadata.get("plan_id"),
-            "plan_name": metadata.get("plan_name"),
-            "payment_status": checkout_session.get("payment_status"),
-        })
-
-    return jsonify({
-        "ok": True,
-        "confirmed": False,
-        "source": "stripe_lookup",
-        "payment_status": checkout_session.get("payment_status"),
-        "checkout_status": checkout_session.get("status"),
-    })
-
-
-@app.post("/stripe/webhook")
-def salonmax_stripe_webhook():
-    payload = request.get_data(cache=False)
-    signature_header = request.headers.get("Stripe-Signature", "")
-    webhook_secret = os.environ.get("SALONMAX_STRIPE_WEBHOOK_SECRET", "").strip()
-    if not webhook_secret:
-        return json_error("WEBHOOK_SECRET_MISSING", "Stripe webhook secret is not configured.", status=500)
-    if not verify_stripe_signature(payload, signature_header, webhook_secret):
-        return json_error("WEBHOOK_SIGNATURE_INVALID", "Stripe webhook signature was invalid.", status=400)
-
-    try:
-        event = json.loads(payload.decode("utf-8"))
-    except json.JSONDecodeError:
-        return json_error("WEBHOOK_BAD_JSON", "Stripe webhook body was not valid JSON.", status=400)
-
-    event_type = event.get("type", "")
-    data_object = ((event.get("data") or {}).get("object") or {})
-    if event_type == "checkout.session.completed":
-        save_gym_checkout_event_from_session(event.get("id", ""), data_object, raw_event=event)
-    return jsonify({"ok": True, "received": True})
-
-
-def gym_payment_settings(business_account_public_id: str):
-    ensure_gym_payment_settings_table()
-    row = platform_query_one(
-        "select * from gym_payment_settings where business_account_public_id = ?",
-        (business_account_public_id,),
-    )
-    return {
-        "provider": row["provider"] if row else "stripe_connect",
-        "provider_account_id": row["provider_account_id"] if row else "",
-        "currency": row["currency"] if row else "gbp",
-        "application_fee_percent": float(row["application_fee_percent"] if row else 0),
-        "checkout_enabled": bool(row["checkout_enabled"] if row else 0),
-    }
-
-
-def verify_stripe_signature(payload: bytes, signature_header: str, webhook_secret: str, tolerance_seconds: int = 300) -> bool:
-    parts = {}
-    for item in signature_header.split(","):
-        if "=" in item:
-            key, value = item.split("=", 1)
-            parts.setdefault(key, []).append(value)
-    try:
-        timestamp = int((parts.get("t") or [""])[0])
-    except ValueError:
-        return False
-    if abs(datetime.now(ZoneInfo("UTC")).timestamp() - timestamp) > tolerance_seconds:
-        return False
-    signed_payload = f"{timestamp}.".encode("utf-8") + payload
-    expected = hmac.new(webhook_secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
-    return any(hmac.compare_digest(expected, signature) for signature in parts.get("v1", []))
-
-
-def save_gym_checkout_event_from_session(event_id: str, checkout_session: dict, raw_event: dict | None = None):
-    ensure_gym_checkout_events_table()
-    metadata = checkout_session.get("metadata") or {}
-    business_account_public_id = str(metadata.get("business_account_public_id") or "").strip()
-    member_id = str(metadata.get("member_id") or "").strip()
-    plan_id = str(metadata.get("plan_id") or "").strip()
-    checkout_session_id = str(checkout_session.get("id") or "").strip()
-    if not business_account_public_id or not member_id or not plan_id or not checkout_session_id:
-        return
-
-    existing = platform_query_one(
-        "select id from gym_checkout_events where checkout_session_id = ?",
-        (checkout_session_id,),
-    )
-    values = (
-        event_id or checkout_session_id,
-        checkout_session_id,
-        business_account_public_id,
-        member_id,
-        str(metadata.get("member_name") or ""),
-        plan_id,
-        str(metadata.get("plan_name") or ""),
-        int(checkout_session.get("amount_total") or 0),
-        str(checkout_session.get("currency") or "gbp"),
-        str(checkout_session.get("payment_status") or ""),
-        str(checkout_session.get("status") or ""),
-        "checkout.session.completed",
-        json.dumps(raw_event or checkout_session),
-        now_utc_text(),
-        now_utc_text(),
-    )
-    if existing is None:
-        platform_execute(
-            """
-            insert into gym_checkout_events (
-                stripe_event_id,
-                checkout_session_id,
-                business_account_public_id,
-                member_id,
-                member_name,
-                plan_id,
-                plan_name,
-                amount_total,
-                currency,
-                payment_status,
-                checkout_status,
-                event_type,
-                raw_json,
-                created_at,
-                updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            values,
-        )
-    else:
-        platform_execute(
-            """
-            update gym_checkout_events
-            set stripe_event_id = ?,
-                business_account_public_id = ?,
-                member_id = ?,
-                member_name = ?,
-                plan_id = ?,
-                plan_name = ?,
-                amount_total = ?,
-                currency = ?,
-                payment_status = ?,
-                checkout_status = ?,
-                event_type = ?,
-                raw_json = ?,
-                updated_at = ?
-            where checkout_session_id = ?
-            """,
-            (
-                values[0], values[2], values[3], values[4], values[5], values[6],
-                values[7], values[8], values[9], values[10], values[11], values[12],
-                values[14], values[1],
-            ),
-        )
-
-
-def create_stripe_checkout_session(stripe_secret_key: str, connected_account_id: str, params: dict):
-    encoded = urlencode(params).encode("utf-8")
-    request_obj = UrlRequest(
-        "https://api.stripe.com/v1/checkout/sessions",
-        data=encoded,
-        headers={
-            "Authorization": f"Bearer {stripe_secret_key}",
-            "Stripe-Account": connected_account_id,
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        method="POST",
-    )
-    with urlopen(request_obj, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def retrieve_stripe_checkout_session(stripe_secret_key: str, connected_account_id: str, checkout_session_id: str):
-    request_obj = UrlRequest(
-        f"https://api.stripe.com/v1/checkout/sessions/{checkout_session_id}",
-        headers={
-            "Authorization": f"Bearer {stripe_secret_key}",
-            "Stripe-Account": connected_account_id,
-        },
-        method="GET",
-    )
-    with urlopen(request_obj, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-
-@app.route("/platform/business/<business_account_public_id>/gym-access")
-def salonmax_owner_business_gym_access(business_account_public_id: str):
-    snapshot = salonmax_business_gym_access_snapshot(business_account_public_id)
-    if snapshot is None:
-        return json_error("BUSINESS_NOT_FOUND", "No Salon Max business account was found for that id.", status=404)
-    return render_template(
-        "salonmax_gym_access.html",
-        snapshot=snapshot,
-        title="Salon Max Gym Access",
         notice=request.args.get("notice", "").strip(),
     )
 
@@ -6850,6 +5817,20 @@ def salonmax_import_business_customers(business_account_public_id: str):
     if business_row is None:
         return redirect(url_for("salonmax_owner_console", notice="Business not found."))
     csv_text = request.form.get("csv_text", "").strip()
+    upload = request.files.get("csv_file")
+    if upload and upload.filename:
+        if csv_text:
+            return redirect(url_for("salonmax_owner_business_detail", business_account_public_id=business_account_public_id,
+                                    notice="Choose either a CSV file or pasted CSV data."))
+        data = upload.read(1024 * 1024 + 1)
+        if len(data) > 1024 * 1024:
+            return redirect(url_for("salonmax_owner_business_detail", business_account_public_id=business_account_public_id,
+                                    notice="The CSV file must be 1 MB or smaller."))
+        try:
+            csv_text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return redirect(url_for("salonmax_owner_business_detail", business_account_public_id=business_account_public_id,
+                                    notice="Save the CSV as UTF-8 and try again."))
     author_name = request.form.get("author_name", "").strip()
     if not csv_text:
         return redirect(
@@ -6859,19 +5840,29 @@ def salonmax_import_business_customers(business_account_public_id: str):
                 notice="Paste CSV customer data before importing.",
             )
         )
-    parse_result = parse_customer_import_csv(csv_text)
+    if len(csv_text.encode("utf-8")) > 1024 * 1024:
+        return redirect(url_for("salonmax_owner_business_detail", business_account_public_id=business_account_public_id,
+                                notice="The CSV must be 1 MB or smaller."))
+    try:
+        parse_result = parse_customer_import_csv(csv_text)
+    except csv.Error:
+        return redirect(url_for("salonmax_owner_business_detail", business_account_public_id=business_account_public_id,
+                                notice="The CSV could not be read. Check quotes and field lengths."))
     rows = parse_result["rows"]
     if not rows:
         return redirect(
             url_for(
                 "salonmax_owner_business_detail",
                 business_account_public_id=business_account_public_id,
-                notice="No valid customer rows were found in that CSV import.",
+                notice="No valid customer rows were found. " + " ".join(parse_result["warnings"][:4]),
             )
         )
     db = get_platform_db()
     created_count = 0
     updated_count = 0
+    conflict_count = 0
+    if postgres():
+        db.raw.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (business_account_public_id,))
     source_reference = f"import:{business_account_public_id}:{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
     for row in rows:
         result = upsert_cloud_import_customer(
@@ -6881,16 +5872,20 @@ def salonmax_import_business_customers(business_account_public_id: str):
             source_reference=source_reference,
             author_name=author_name,
         )
-        if result["created"]:
+        if result.get("conflict"):
+            conflict_count += 1
+        elif result["created"]:
             created_count += 1
         else:
             updated_count += 1
     db.commit()
     warning_bits = []
+    if conflict_count:
+        warning_bits.append(f"Conflicting matches skipped: {conflict_count}")
     if int(parse_result["skipped_count"] or 0) > 0:
         warning_bits.append(f"Skipped: {int(parse_result['skipped_count'])}")
     if int(parse_result["error_count"] or 0) > 0:
-        warning_bits.append(f"Adjusted fields: {int(parse_result['error_count'])}")
+        warning_bits.append(f"Invalid rows skipped: {int(parse_result['error_count'])}")
     warning_suffix = f" ({', '.join(warning_bits)})" if warning_bits else ""
     save_cloud_support_note(
         business_account_public_id,

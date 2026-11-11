@@ -1,6 +1,6 @@
 {% extends "provider_base.html" %}
 {% block content %}
-<div class="panel"><a class="button" href="{{ url_for('business_detail', public_id=snapshot.business_account_public_id) }}">Commissioning, salon logo and sunbed pictures</a></div>
+<div class="panel"><a class="button" href="{{ url_for('business_detail', public_id=snapshot.business_account_public_id) }}">Commissioning, salon logo and sunbed pictures</a> <a class="button" href="{{ url_for('salon.provision_owner', tenant=snapshot.business_account_public_id) }}">Salon owner web access</a></div>
 <div class="stack">
     {% if notice %}
     <div class="alert warning">{{ notice }}</div>
@@ -449,10 +449,10 @@
         <div class="muted" style="margin-bottom:12px;">Use this for onboarding and migration only. Paste a CSV with customer details, balances, and minutes, and Salon Max will import the list into this salon business and sync it down to the paired till.</div>
         <div class="alert warning" style="margin-bottom:12px;">
             Import guidance:
-            Customer number, account number, phone, or email should be included where possible so Salon Max can match and update the right customer cleanly.
+            Include a customer number, account number, or email so Salon Max can match and update the right customer cleanly.
             Invalid balances/minutes are defaulted safely and reported back in the import notice.
         </div>
-        <form method="post" action="{{ url_for('salonmax_import_business_customers', business_account_public_id=snapshot.business_account_public_id) }}" class="stack">
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('salonmax_import_business_customers', business_account_public_id=snapshot.business_account_public_id) }}" class="stack">
             <div class="grid" style="grid-template-columns: 0.8fr 1.2fr;">
                 <div>
                     <label for="import-author-name">Support staff</label>
@@ -462,6 +462,8 @@
             </div>
             <div>
                 <label for="csv-text">CSV data</label>
+                <label for="csv-file">Or upload a UTF-8 CSV file</label>
+                <input id="csv-file" type="file" name="csv_file" accept=".csv,text/csv">
                 <textarea id="csv-text" name="csv_text" rows="8" placeholder="first_name,last_name,customer_number,account_number,phone,email,balance,minutes,notes&#10;Jane,Doe,1001,A-1001,07123456789,jane@example.com,12.50,30,Imported from previous system"></textarea>
             </div>
             <div class="row">

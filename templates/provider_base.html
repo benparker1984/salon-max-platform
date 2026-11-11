@@ -246,13 +246,12 @@
             <a class="primary" href="{{ url_for('salonmax_owner_console') }}">Business Accounts</a>
             <a href="{{ url_for('salonmax_onboard_business') }}">Onboard New Salon</a>
             <a href="{{ url_for('salonmax_owner_queries') }}">Queries</a>
-            <a href="{{ url_for('salonmax_owner_stats') }}">Stats</a>
             <a href="{{ url_for('salonmax_owner_analytics') }}">Analytics</a>
             <a href="{{ url_for('salonmax_owner_customer_insights') }}">Customer Insights</a>
-            <a href="{{ url_for('salonmax_owner_gyms') }}">Gyms</a>
             <a href="{{ url_for('salonmax_owner_licences') }}">Licences</a>
             <a href="{{ url_for('salonmax_owner_diagnostics') }}">Diagnostics</a>
             <a href="{{ url_for('salonmax_owner_updates') }}">Updates</a>
+            <a href="{{ url_for('commercial.overview') }}">Commercial Benchmarks</a>
             <a href="/platform/estate-health">Estate Health</a><a href="/platform/export.json">Export</a><a href="/commissioning/platform">Commissioning</a><a href="{{ url_for('salonmax_platform_logout') }}">Sign Out</a>
         </nav>
         {% block content %}{% endblock %}

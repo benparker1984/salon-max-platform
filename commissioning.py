@@ -862,40 +862,6 @@ def active_business_rows():
     )
 
 
-@app.route("/platform/stats")
-def platform_stats():
-    terminals = terminal_rows_with_business()
-    health_counts = {"active": 0, "stale": 0, "neutral": 0}
-    locked_count = 0
-    for terminal in terminals:
-        health_counts[terminal["health"]["status"]] = health_counts.get(terminal["health"]["status"], 0) + 1
-        if (
-            terminal["business_status"] == "suspended"
-            or terminal["subscription_status"] in {"suspended", "cancelled"}
-            or terminal["last_lease_status"] in {"suspended", "cancelled", "archived"}
-        ):
-            locked_count += 1
-    recent_checkins = [
-        terminal for terminal in sorted(
-            terminals,
-            key=lambda item: item["last_seen_at"] or "",
-            reverse=True,
-        )
-        if terminal["last_seen_at"]
-    ][:20]
-    return render_template(
-        "commissioning/stats.html",
-        title="Salon Max Stats",
-        counts=platform_counts(),
-        businesses=active_business_rows(),
-        terminals=terminals,
-        health_counts=health_counts,
-        locked_count=locked_count,
-        recent_checkins=recent_checkins,
-        notice=request.args.get("notice", "").strip(),
-    )
-
-
 @app.route("/platform/analytics")
 def platform_analytics():
     terminals = terminal_rows_with_business()

@@ -13,8 +13,16 @@ import commissioning
 import bridge
 import recovery
 import storage
+import salon_web
+import checkout
+import marketing
+from commercial import bp as commercial_bp
 
 app = provider.app
+app.register_blueprint(commercial_bp)
+app.register_blueprint(salon_web.bp)
+app.register_blueprint(checkout.bp)
+app.register_blueprint(marketing.bp)
 app.config.update(MAX_CONTENT_LENGTH=10 * 1024 * 1024, SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=storage.postgres())
 
@@ -35,10 +43,10 @@ def initialise():
             lock.commit()
         with app.app_context():
             provider.init_db()
-            provider.ensure_gym_staff_auth_table()
-            provider.ensure_gym_payment_settings_table()
-            provider.ensure_gym_checkout_events_table()
             recovery.restore(provider)
+            salon_web.init_schema()
+            checkout.init_schema()
+            marketing.init_schema()
             app.config['PLATFORM_SCHEMA_READY'] = True
             commissioning.init_db()
             commissioning.ensure_column('sites', 'recovered_public_id', "text not null default ''")
@@ -60,7 +68,7 @@ def hosted_boundaries_and_device_auth():
     path = request.path
     if path.startswith('/commissioning') and not (session.get('platform_admin_authenticated') or session.get('salonmax_platform_authed')):
         return redirect(url_for('salonmax_platform_login', next=request.full_path.rstrip('?')))
-    if provider.APP_ROLE == 'cloud' and path != '/' and not path.startswith(('/platform', '/salonmax-platform', '/v1/', '/static/', '/commissioning', '/healthz', '/gym/', '/kado', '/stripe/')):
+    if provider.APP_ROLE == 'cloud' and path != '/' and not path.startswith(('/platform', '/salonmax-platform', '/v1/', '/static/', '/commissioning', '/healthz', '/salon/')):
         abort(404)
     if path.startswith('/commissioning') and request.method == 'GET':
         bridge.to_commissioning(provider, commissioning)
@@ -109,7 +117,13 @@ app.view_functions['dashboard'] = lambda: redirect(url_for('salonmax_owner_conso
 def healthz():
     row = provider.platform_query_one('select count(*) as count from platform_recovery_runs')
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
-                   release='provider-recovery-v3', recovery_applied=bool(row['count']))
+                   release='salon-web-v1', recovery_applied=bool(row['count']))
+
+
+@app.get('/platform/stats')
+@app.get('/commissioning/platform/stats')
+def redirect_stats():
+    return redirect(url_for('estate_health'), code=301)
 
 
 @app.get('/platform/estate-health')
@@ -124,7 +138,7 @@ def platform_export():
     names = ['cloud_business_accounts', 'cloud_business_sites', 'cloud_terminal_registry', 'cloud_device_licences',
              'cloud_sync_events', 'cloud_customers', 'cloud_customer_balance_ledger', 'cloud_customer_minute_ledger',
              'cloud_customer_balance_summary', 'cloud_customer_minute_summary', 'cloud_support_notes',
-             'gym_staff_auth', 'gym_payment_settings', 'gym_checkout_events', 'platform_media', 'platform_recovery_runs']
+             'platform_media', 'platform_recovery_runs']
     data = {t:[dict(r) for r in provider.platform_query_all(f'select * from {t}')] for t in names}
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
                    exported_at=provider.now_utc_text(),

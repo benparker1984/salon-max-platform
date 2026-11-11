@@ -66,8 +66,15 @@ def test_restoration_is_repeatable_without_overwriting(platform):
 def test_authenticated_provider_pages_and_export(platform):
     app,p=platform
     c=owner_client(app)
-    for route in ['/platform','/platform/queries','/platform/stats','/platform/analytics','/platform/customer-insights','/platform/licences','/platform/diagnostics','/platform/updates','/platform/estate-health','/commissioning/platform']:
+    for route in ['/platform','/platform/queries','/platform/analytics','/platform/customer-insights','/platform/licences','/platform/diagnostics','/platform/updates','/platform/estate-health','/commissioning/platform']:
         assert c.get(route).status_code==200,route
+    for route in ['/platform/stats', '/commissioning/platform/stats']:
+        retired = c.get(route)
+        assert retired.status_code == 301
+        assert retired.location == '/platform/estate-health'
+    for route in ['/kado', '/gym/test/join', '/platform/gyms', '/platform/business/test/gym-access']:
+        assert c.get(route).status_code == 404
+    assert c.post('/stripe/webhook').status_code == 404
     response=c.get('/platform/export.json')
     assert response.status_code==200
     assert response.json['database']=='postgres'
@@ -223,3 +230,103 @@ def test_newer_business_pairing_code_still_works(platform,tenant):
     assert data['site_public_id']==site
     new_headers={'Authorization':'Bearer '+data['signed_token'],'X-SalonMax-Business-Id':business,'X-SalonMax-Device-Id':data['terminal_device_public_id']}
     assert app.test_client().get('/v1/customers/directory',headers=new_headers).status_code==200
+
+
+def test_salon_login_invite_and_tenant_isolation(platform, tenant):
+    import re
+    app, p = platform
+    business, *_ = tenant
+    other = "biz_other_" + uuid.uuid4().hex[:12]
+    with app.app_context():
+        p.ensure_cloud_business_account(other, "Other salon")
+    admin = owner_client(app)
+    path = f"/platform/business/{business}/web-access"
+    assert admin.get(path).status_code == 200
+    with admin.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    assert admin.post(path, data={"role": "owner", "login": "owner"}).status_code == 400
+    result = admin.post(path, data={"role": "owner", "login": "owner", "csrf": csrf})
+    link = re.search(rb'/salon/[^/]+/activate/[A-Za-z0-9_-]+', result.data)[0].decode()
+    browser = app.test_client()
+    assert browser.get(link).status_code == 200
+    with browser.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    password = "unique fixture password"
+    assert browser.post(link, data={"csrf": csrf, "password": password}).status_code == 303
+    assert browser.get(link).status_code == 404
+    assert browser.post(f"/salon/{business}/login", data={
+        "csrf": csrf, "login": "owner", "role": "owner", "password": password
+    }).status_code == 303
+    assert browser.get(f"/salon/{business}/offers").status_code == 200
+    assert browser.get(f"/salon/{other}/offers").status_code == 403
+    assert browser.get(f"/salon/{other}/access").status_code == 403
+    assert browser.get("/platform").status_code == 302
+    with app.app_context():
+        p.platform_execute("update web_accounts set disabled=1 where tenant=?", (business,))
+    assert browser.get(f"/salon/{business}/offers").status_code == 403
+    assert browser.get("/salon/").status_code == 200
+    assert browser.get("/salon/service-worker.js").status_code == 200
+    assert browser.get("/static/salon.webmanifest").json["scope"] == "/salon/"
+
+
+def test_signed_payment_and_consent_withdrawal(platform, tenant, monkeypatch):
+    import hashlib
+    import hmac
+    import json
+    import time
+    import marketing
+
+    app, p = platform
+    business, *_ = tenant
+    order = uuid.uuid4().hex
+    staff = uuid.uuid4().hex
+    customer = uuid.uuid4().hex
+    token = uuid.uuid4().hex
+    monkeypatch.setenv("SALONMAX_STRIPE_WEBHOOK_SECRET", "test-secret")
+    with app.app_context():
+        p.platform_execute("""
+            insert into cloud_customers (business_account_public_id,customer_public_id,email,status)
+            values (?,?,?,'active')
+        """, (business, customer, "fixture@example.invalid"))
+        p.platform_execute("""
+            insert into web_orders (order_id,tenant,customer_id,stripe_account,offer_id,minutes,amount)
+            values (?,?,?,'acct_test','fixture',30,1000)
+        """, (order, business, customer))
+        p.platform_execute("""
+            insert into web_accounts (account_id,tenant,login,role) values (?,?,'staff','staff')
+        """, (staff, business))
+        p.platform_execute("insert into web_marketing_consent values (?,?, 'email', 'fixture@example.invalid',1,?)",
+                           (business, customer, p.now_utc_text()))
+        p.platform_execute("""
+            insert into web_marketing_outbox values (?,?,?,'email','fixture@example.invalid','Test','Test',?,'queued',?,null)
+        """, (uuid.uuid4().hex, business, customer, hashlib.sha256(token.encode()).hexdigest(), p.now_utc_text()))
+    browser = app.test_client()
+    with browser.session_transaction() as state:
+        state["salon_account"] = staff
+    assert browser.get(f"/salon/{business}/access").status_code == 200
+    assert browser.get(f"/salon/{business}/offers").status_code == 403
+    assert browser.get(f"/salon/{business}/marketing").status_code == 403
+    event = {"account": "acct_test", "type": "checkout.session.completed", "data": {"object": {
+        "amount_total": 1000, "currency": "gbp", "payment_status": "paid", "metadata": {"order_id": order}
+    }}}
+    raw = json.dumps(event).encode()
+    timestamp = str(int(time.time()))
+    signature = hmac.new(b"test-secret", timestamp.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    url = "/salon/payments/webhook"
+    assert browser.post(url, data=raw, content_type="application/json").status_code == 400
+    for _ in range(2):
+        assert browser.post(url, data=raw, content_type="application/json",
+                            headers={"Stripe-Signature": f"t={timestamp},v1={signature}"}).status_code == 204
+    unsubscribe = f"/salon/unsubscribe/{token}"
+    assert browser.get(unsubscribe).status_code == 200
+    with browser.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    assert browser.post(unsubscribe, data={"csrf": csrf}).status_code == 200
+    deliveries = []
+    monkeypatch.setattr(marketing, "deliver", deliveries.append)
+    with app.app_context():
+        marketing.dispatch(25)
+        assert deliveries == []
+        assert p.platform_query_one("select status from web_marketing_outbox where tenant=?", (business,))["status"] == "suppressed"
+        assert p.platform_query_one("select count(*) as count from cloud_customer_minute_ledger where source_reference=?", (order,))["count"] == 1
+        assert p.platform_query_one("select minutes_available from cloud_customer_minute_summary where customer_public_id=?", (customer,))["minutes_available"] == 30

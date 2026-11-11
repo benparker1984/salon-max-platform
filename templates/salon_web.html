@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ salon.business_name }} | Salon Max</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='salon-web.css') }}">
+<meta name="theme-color" content="#0c1523">
+<link rel="manifest" href="{{ url_for('static', filename='salon.webmanifest') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='salon-icon-192.png') }}">
+<script src="{{ url_for('static', filename='salon-pwa.js') }}" defer></script>
+</head>
+<body><main>
+<header><span>Salon Max</span><h1>{{ salon.business_name }}</h1></header>
+{% set tenant = salon.business_account_public_id %}
+{% if mode == 'choose' %}
+<form method="get"><label>Salon code<input name="code" required maxlength="100"></label><button>Open salon</button></form>
+{% elif mode in ('activate','login') %}
+<h2>{{ 'Choose a password' if mode == 'activate' else 'Sign in' }}</h2>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+{% if mode == 'login' %}
+<label>Account type<select name="role"><option value="customer">Customer</option><option value="owner">Salon owner</option><option value="staff">Salon staff</option></select></label>
+<label>Login<input name="login" autocomplete="username" required maxlength="254"></label>
+{% endif %}
+<label>Password<input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'activate' else 'current-password' }}" {% if mode == 'activate' %}minlength="12"{% endif %} maxlength="128" required></label>
+<button>{{ 'Activate account' if mode == 'activate' else 'Sign in' }}</button>
+</form>
+{% elif mode == 'dashboard' %}
+{% if account.role == 'customer' %}
+<h2>Your minutes</h2><p>{{ minutes }} available</p>
+<a href="{{ url_for('marketing.preferences', tenant=tenant) }}">Marketing preferences</a>
+{% if request.args.get('checkout') == 'returned' %}<p>Payment confirmation may take a moment. Refresh to check your minutes.</p>{% endif %}
+{% if checkout_enabled and offers %}
+<h2>Buy minutes</h2>
+{% for offer in offers %}
+<form method="post" action="{{ url_for('checkout.buy', tenant=tenant) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="offer_id" value="{{ offer.offer_id }}">
+<button>{{ offer.title }} · {{ offer.minutes }} minutes · £{{ '%.2f'|format(offer.amount / 100) }}</button>
+</form>
+{% endfor %}
+{% endif %}
+{% else %}
+<h2>Salon workspace</h2>
+<a href="{{ url_for('salon.provision_team', tenant=tenant) }}">Manage web access</a>
+{% if account.role == 'owner' %}<p><a href="{{ url_for('checkout.manage', tenant=tenant) }}">Manage packages</a></p><p><a href="{{ url_for('marketing.campaigns', tenant=tenant) }}">Marketing and outbox</a></p>{% endif %}
+{% endif %}
+<form method="post" action="{{ url_for('salon.logout', tenant=tenant) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Sign out</button></form>
+{% elif mode == 'preferences' %}
+<h2>Marketing preferences</h2>
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+{% for channel, address in addresses.items() %}
+<label><span><input class="checkbox" type="checkbox" name="{{ channel }}" {% if channel in enabled %}checked{% endif %} {% if not address %}disabled{% endif %}> Receive {{ channel|upper }} offers from {{ salon.business_name }}</span></label>
+{% endfor %}
+<button>Save preferences</button>
+</form>
+<a href="{{ url_for('salon.dashboard', tenant=tenant) }}">Back to your account</a>
+{% elif mode == 'marketing' %}
+<h2>Marketing outbox</h2>
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Channel<select name="channel"><option value="email">Email</option><option value="sms">SMS</option></select></label>
+<label>Subject<input name="subject" maxlength="100" required></label>
+<label>Message<textarea name="body" maxlength="5000" rows="6" required></textarea></label>
+<button>Queue for opted-in customers</button>
+</form>
+<ul>{% for row in counts %}<li>{{ row.channel|upper }} · {{ row.status|replace('_',' ') }} · {{ row.total }}</li>{% endfor %}</ul>
+<a href="{{ url_for('salon.dashboard', tenant=tenant) }}">Back to salon</a>
+{% elif mode == 'unsubscribe' %}
+<h2>{{ channel|upper }} marketing</h2>
+{% if completed %}<p>You have unsubscribed from {{ channel|upper }} marketing.</p>{% else %}
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Unsubscribe</button></form>
+{% endif %}
+{% elif mode == 'offers' %}
+<h2>Packages</h2>
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Name<input name="title" maxlength="80" required></label>
+<label>Minutes<input name="minutes" type="number" min="1" max="10000" required></label>
+<label>Price in pence<input name="amount" type="number" min="30" max="100000" required></label>
+<button>Add package</button>
+</form>
+{% for offer in offers %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="retire" value="{{ offer.offer_id }}">
+<span>{{ offer.title }} · {{ offer.minutes }} minutes · £{{ '%.2f'|format(offer.amount / 100) }}</span>
+<button>Retire package</button>
+</form>
+{% endfor %}
+<a href="{{ url_for('salon.dashboard', tenant=tenant) }}">Back to salon</a>
+{% elif mode == 'manage' %}
+<h2>Web access</h2>
+{% if invite %}<p>Share this one-time link privately. It expires in 24 hours.</p><input readonly aria-label="Activation link" value="https://www.salonmax.co.uk{{ invite }}">{% endif %}
+{% for role in roles %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="role" value="{{ role }}">
+{% if role == 'customer' %}
+<label>Customer<select name="customer_id" required><option value="">Choose a customer</option>{% for customer in customers %}<option value="{{ customer.customer_public_id }}">{{ customer.first_name }} {{ customer.last_name }} ({{ customer.email }})</option>{% endfor %}</select></label>
+{% else %}<label>{{ role|capitalize }} login<input name="login" required maxlength="254"></label>{% endif %}
+<button>Create {{ role }} invite</button>
+</form>
+{% endfor %}
+<ul>{% for account in accounts %}
+<li>{{ account.login }} ({{ account.role }}){% if account.disabled %} · Disabled{% else %}
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="disable"><input type="hidden" name="account_id" value="{{ account.account_id }}"><button>Disable</button></form>
+{% endif %}</li>{% endfor %}</ul>
+{% endif %}
+</main></body>
+</html>

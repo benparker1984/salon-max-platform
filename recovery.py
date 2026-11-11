@@ -25,10 +25,12 @@ def restore(provider):
     data = json.loads(raw)
     allowed = {'cloud_business_accounts', 'cloud_business_sites', 'cloud_terminal_registry', 'cloud_device_licences',
                'cloud_sync_events', 'cloud_customers', 'cloud_customer_balance_ledger', 'cloud_customer_minute_ledger',
-               'cloud_customer_balance_summary', 'cloud_customer_minute_summary', 'cloud_support_notes',
-               'gym_staff_auth', 'gym_payment_settings'}
+               'cloud_customer_balance_summary', 'cloud_customer_minute_summary', 'cloud_support_notes'}
+    dormant = {'gym_staff_auth', 'gym_payment_settings'}
     try:
         for table, rows in data.items():
+            if table in dormant:
+                continue
             if table not in allowed:
                 raise RuntimeError('Unexpected recovery table')
             for row in rows:
@@ -39,13 +41,13 @@ def restore(provider):
                 db.execute(f'insert into "{table}" ({fields}) values ({placeholders}) on conflict do nothing', tuple(row.values()))
         if hasattr(db, 'raw'):
             for table in data:
-                if not data[table] or 'id' not in data[table][0]:
+                if table in dormant or not data[table] or 'id' not in data[table][0]:
                     continue
                 sequence = db.raw.execute('select pg_get_serial_sequence(%s, %s) as name', (table, 'id')).fetchone()
                 if sequence and sequence['name']:
                     db.raw.execute(f"select setval(%s, greatest(coalesce((select max(id) from {table}), 0), 1), coalesce((select max(id) from {table}), 0)>0)", (sequence['name'],))
         db.execute('insert into platform_recovery_runs values (?, ?, ?)',
-                   (package['sha256'], provider.now_utc_text(), json.dumps({t:len(r) for t,r in data.items()})))
+                   (package['sha256'], provider.now_utc_text(), json.dumps({t:len(r) for t,r in data.items() if t not in dormant})))
         db.commit()
     except Exception:
         db.rollback()

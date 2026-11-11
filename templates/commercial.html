@@ -1,0 +1,15 @@
+{% extends "provider_base.html" %}
+{% block content %}
+<section class="panel">
+    <h2>Commercial Benchmarks</h2>
+    <p>{{ month }} &middot; Completed salon till and web sales in GBP. Excludes account top-ups.</p>
+    {% if totals %}
+    <dl>
+        <dt>Gross sales, rounded to £100</dt><dd>£{{ "{:,}".format(totals.gross) }}</dd>
+        <dt>Sales, rounded to 10</dt><dd>{{ "{:,}".format(totals.transactions) }}</dd>
+    </dl>
+    {% else %}
+    <p>Results are withheld until at least five salons and 30 sales contribute, and no salon accounts for half or more of either measure.</p>
+    {% endif %}
+</section>
+{% endblock %}
