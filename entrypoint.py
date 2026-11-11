@@ -124,7 +124,7 @@ app.view_functions['dashboard'] = lambda: redirect(url_for('salonmax_owner_conso
 def healthz():
     row = provider.platform_query_one('select count(*) as count from platform_recovery_runs')
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
-                   release='salon-web-v3', recovery_applied=bool(row['count']))
+                   release='salon-web-v4', recovery_applied=bool(row['count']))
 
 
 @app.get('/platform/stats')

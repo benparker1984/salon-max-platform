@@ -20,12 +20,33 @@
 <button>Sign in</button>
 </form>
 <a href="{{ url_for('backoffice.workspace', slug=slug, section='forgot-password') }}">Forgot your password?</a>
+<p><a href="{{ url_for('backoffice.workspace', slug=slug, section='register') }}">Register with a setup link</a></p>
+</section>
+{% elif mode == "register" %}
+<section class="panel auth">
+<h2>{{ 'Choose a new password' if resetting else 'Register your back office account' }}</h2>
+{% if not token %}<p>Ask your salon administrator for a one-time setup link. You can open that link directly or enter its setup code below.</p>{% endif %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+{% if not token %}<label>Setup code<input name="setup_code" required maxlength="43" autocomplete="off"></label>{% endif %}
+<label>Email address<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+<label>{{ 'New password' if resetting else 'Choose a password' }}<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="128"></label>
+<button>{{ 'Set new password' if resetting else 'Create account' }}</button>
+</form>
+<p><a href="{{ url_for('backoffice.workspace', slug=slug, section='sign-in') }}">Already registered? Sign in</a></p>
+</section>
+{% elif mode == "recovery-code" %}
+<section class="panel auth">
+<h2>Password saved</h2>
+<p>Save this one-time recovery code somewhere private. You can use it to reset your password if you lose access to your account.</p>
+<label>Recovery code<input readonly value="{{ recovery_code }}"></label>
+<p><a href="{{ url_for('backoffice.workspace', slug=slug, section='sign-in') }}">Continue to sign in</a></p>
 </section>
 {% elif mode == "forgot" %}
 <section class="panel auth">
 <h2>Reset your password</h2>
 {% if not email_enabled %}
-<p>Password reset email is unavailable. Contact your salon owner or Salon Max support for a private setup link.</p>
+<p>Use your recovery code below. If you don’t have one, ask your salon administrator for a private reset link.</p>
 {% elif submitted %}
 <p>If this email belongs to a back office account, you’ll receive a reset link.</p>
 {% else %}
@@ -35,6 +56,16 @@
 <button>Send reset link</button>
 </form>
 {% endif %}
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<h3>Reset with a recovery code</h3>
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="method" value="recovery-code">
+<label>Email address<input name="email" type="email" autocomplete="username" maxlength="254" required></label>
+<label>Recovery code<input name="code" autocomplete="off" maxlength="32" required></label>
+<label>New password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
+<button>Reset password</button>
+</form>
 <a href="{{ url_for('backoffice.workspace', slug=slug, section='sign-in') }}">Back to sign in</a>
 </section>
 {% else %}

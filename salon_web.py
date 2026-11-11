@@ -189,12 +189,21 @@ def activate(tenant, token):
         abort(404)
     hashed = digest(token)
     row = p.platform_query_one("""
-        select account_id,role from web_accounts where tenant=? and invite_hash=? and invite_until>? and disabled=0
+        select account_id,role,login,password_hash from web_accounts
+        where tenant=? and invite_hash=? and invite_until>? and disabled=0
     """, (tenant, hashed, stamp()))
     if not row:
-        abort(404)
+        abort(404, "This setup link is invalid or expired. Ask for a new link.")
+    team_office = None
+    if row["role"] in TEAM:
+        from backoffice import office_url, recovery_code, recovery_page, team_activation_page
+        team_office = office_url(tenant)
+        if team_office and request.method == "GET":
+            return team_activation_page(salon, token, bool(row["password_hash"]))
     if request.method == "POST":
         verify_csrf()
+        if team_office and request.form.get("email", "").strip().lower() != row["login"]:
+            abort(400, "Enter the email address the salon owner used for this setup link.")
         password = request.form.get("password", "")
         if not 12 <= len(password) <= 128:
             abort(400, "Use 12 to 128 characters.")
@@ -203,16 +212,14 @@ def activate(tenant, token):
             update web_accounts set password_hash=?, invite_hash=null, invite_until=null
             where tenant=? and account_id=? and invite_hash=? and invite_until>? and disabled=0
         """, (generate_password_hash(password), tenant, row["account_id"], hashed, stamp()))
-        db.commit()
         if cursor.rowcount != 1:
             abort(404)
+        code = recovery_code(db, row["account_id"]) if team_office else None
+        db.commit()
         if session.get("salon_account") == row["account_id"]:
             session.clear()
-        if row["role"] != "customer":
-            from backoffice import office_url
-            office = office_url(tenant)
-            if office:
-                return redirect(office, code=303)
+        if code:
+            return recovery_page(salon, code)
         return redirect(url_for("salon.customer_login" if row["role"] == "customer" else "salon.login", tenant=tenant), code=303)
     return page(salon=salon, mode="activate")
 

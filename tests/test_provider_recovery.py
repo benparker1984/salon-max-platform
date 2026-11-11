@@ -414,12 +414,16 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
     result = admin.post(management, data={"csrf": csrf, "role": "owner", "login": email})
     link = re.search(rb'/salon/[^/]+/activate/[A-Za-z0-9_-]+', result.data)[0].decode()
     browser = app.test_client()
-    assert browser.get(address).location == address + "/sign-in"
+    assert browser.get(address).location == address + "/register"
     assert b"Forgot your password?" in browser.get(address + "/sign-in").data
-    assert browser.get(link).status_code == 200
+    assert b"Register your back office account" in browser.get(link).data
     with browser.session_transaction() as state:
         csrf = state["salon_csrf"]
-    assert browser.post(link, data={"csrf": csrf, "password": "First valid password"}).status_code == 303
+    assert browser.post(link, data={
+        "csrf": csrf, "email": "wrong@example.invalid", "password": "First valid password"
+    }).status_code == 400
+    registered = browser.post(link, data={"csrf": csrf, "email": email, "password": "First valid password"})
+    code = re.search(rb'Recovery code<input readonly value="([A-Za-z0-9_-]{32})"', registered.data)[1].decode()
     assert browser.post(address + "/sign-in", data={
         "csrf": csrf, "email": email, "role": "owner", "password": "First valid password"
     }).status_code == 303
@@ -429,6 +433,25 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
     assert browser.get(other_address + "/customers").status_code == 403
     assert browser.post(other_address + "/settings", data={"phone": "unauthorised"}).status_code == 403
 
+    reset_path = address + "/forgot-password"
+    resetter = app.test_client()
+    assert b"Reset with a recovery code" in resetter.get(reset_path).data
+    with resetter.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    recovered = resetter.post(reset_path, data={
+        "csrf": csrf, "email": email, "method": "recovery-code", "code": code,
+        "password": "Recovered fixture password",
+    })
+    assert b"Password saved" in recovered.data
+    assert b"did not match" in resetter.post(reset_path, data={
+        "csrf": csrf, "email": email, "method": "recovery-code", "code": code,
+        "password": "Cannot reuse the code",
+    }).data
+    assert browser.get(address).status_code == 403
+    assert resetter.post(address + "/sign-in", data={
+        "csrf": csrf, "email": email, "role": "owner", "password": "Recovered fixture password"
+    }).status_code == 303
+
     sent = []
     monkeypatch.setenv("SALONMAX_TRANSACTIONAL_EMAIL_KEY", "fixture-key")
     monkeypatch.setenv("SALONMAX_TRANSACTIONAL_EMAIL_FROM", "fixture@example.invalid")
@@ -436,6 +459,7 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
         sent.append(json.loads(message.data))
         return nullcontext()
     monkeypatch.setattr(backoffice, "urlopen", deliver)
+    signed_in = resetter
     resetter = app.test_client()
     reset_path = address + "/forgot-password"
     assert resetter.get(reset_path).status_code == 200
@@ -444,9 +468,11 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
     assert resetter.post(reset_path, data={"csrf": csrf, "email": email}).status_code == 200
     assert sent[0]["to"] == [email]
     reset_link = re.search(r'/salon/[^/]+/activate/[A-Za-z0-9_-]+', sent[0]["text"])[0]
-    assert resetter.post(reset_link, data={"csrf": csrf, "password": "Second valid password"}).status_code == 303
+    assert b"Password saved" in resetter.post(reset_link, data={
+        "csrf": csrf, "email": email, "password": "Second valid password"
+    }).data
     assert resetter.get(reset_link).status_code == 404
-    assert browser.get(address).status_code == 403
+    assert signed_in.get(address).status_code == 403
     assert b"did not match" in resetter.post(address + "/sign-in", data={
         "csrf": csrf, "email": email, "role": "owner", "password": "First valid password"
     }).data

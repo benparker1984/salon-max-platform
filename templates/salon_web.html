@@ -102,7 +102,10 @@
 {% set customer_url = 'https://www.salonmax.co.uk' ~ url_for('salon.customer_login', tenant=tenant) %}
 <p><a href="{{ customer_url }}">Open {{ salon.business_name }} customer portal</a></p>
 <label>Link to share with customers<input readonly value="{{ customer_url }}"></label>
-{% if invite %}<p>Share this one-time link privately. It expires in 24 hours.</p><input readonly aria-label="Activation link" value="https://www.salonmax.co.uk{{ invite }}">{% endif %}
+{% if invite %}
+<p><a href="{{ invite }}" target="_blank" rel="noopener noreferrer">Open password setup link</a></p>
+<label>One-time link to share privately<input readonly aria-label="Activation link" value="https://www.salonmax.co.uk{{ invite }}"></label>
+{% endif %}
 {% for role in roles %}
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">

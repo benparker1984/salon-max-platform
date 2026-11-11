@@ -11,6 +11,7 @@ from flask import Blueprint, abort, make_response, redirect, render_template, re
 
 import provider as p
 import salon_web as web
+from werkzeug.security import generate_password_hash
 
 bp = Blueprint("backoffice", __name__)
 ORIGIN = "https://www.salonmax.co.uk"
@@ -38,6 +39,10 @@ def init_schema():
             tenant text not null, section text not null, item_id text not null,
             name text not null, value integer not null,
             primary key(tenant,section,item_id)
+        );
+        create table if not exists web_account_recovery (
+            account_id text primary key,
+            code_hash text not null
         );
     """)
     db.commit()
@@ -85,6 +90,29 @@ def office_url(tenant):
     return url_for("backoffice.workspace", slug=row["slug"]) if row else None
 
 
+def recovery_code(db, account_id):
+    code = secrets.token_urlsafe(24)
+    db.execute("""
+        insert into web_account_recovery (account_id,code_hash) values (?,?)
+        on conflict(account_id) do update set code_hash=excluded.code_hash
+    """, (account_id, web.digest(code)))
+    return code
+
+
+def team_activation_page(salon, token, active):
+    row = p.platform_query_one("select slug from web_backoffices where tenant=?",
+                               (salon["business_account_public_id"],))
+    if row:
+        return render(salon, row["slug"], "register", token=token, resetting=active)
+    return None
+
+
+def recovery_page(salon, code):
+    row = p.platform_query_one("select slug from web_backoffices where tenant=?",
+                               (salon["business_account_public_id"],))
+    return render(salon, row["slug"], "recovery-code", recovery_code=code)
+
+
 @bp.post("/<slug>/sign-out")
 def sign_out(slug):
     resolve(slug)
@@ -119,10 +147,19 @@ def workspace(slug, section):
         return forgot(tenant, salon, slug)
     if section == "sign-in":
         return sign_in(tenant, salon, slug)
+    if section == "register":
+        if request.method == "POST":
+            web.verify_csrf()
+            return web.activate(tenant, request.form.get("setup_code", "").strip())
+        return render(salon, slug, "register")
     if section not in SECTIONS:
         abort(404)
     if not session.get("salon_account"):
-        return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in"))
+        owner = p.platform_query_one("""
+            select 1 from web_accounts where tenant=? and role='owner'
+              and password_hash is not null and disabled=0 limit 1
+        """, (tenant,))
+        return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in" if owner else "register"))
     account = web.member(tenant, web.TEAM)
     if section in {"staff", "packages"}:
         endpoint = "salon.provision_team" if section == "staff" else "checkout.manage"
@@ -248,6 +285,8 @@ def forgot(tenant, salon, slug):
         if not valid_email(email):
             abort(400)
         web.throttle(tenant, f"reset:{email}")
+        if request.form.get("method") == "recovery-code":
+            return recover_with_code(tenant, salon, slug, email)
         key = os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_KEY")
         sender = os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_FROM")
         if key and sender:
@@ -277,3 +316,32 @@ def forgot(tenant, salon, slug):
         return render(salon, slug, "forgot", submitted=True, email_enabled=bool(key and sender))
     return render(salon, slug, "forgot", email_enabled=bool(os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_KEY")
                                                          and os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_FROM")))
+
+
+def recover_with_code(tenant, salon, slug, email):
+    code = request.form.get("code", "").strip()
+    password = request.form.get("password", "")
+    if len(code) != 32 or not 12 <= len(password) <= 128:
+        abort(400, "Check your recovery code and use a password of 12 to 128 characters.")
+    db = p.get_platform_db()
+    row = db.execute("""
+        select a.account_id,a.password_hash from web_accounts a
+        join web_account_recovery r on r.account_id=a.account_id
+        where a.tenant=? and a.login=? and a.role in ('owner','staff')
+          and a.disabled=0 and r.code_hash=?
+    """, (tenant, email, web.digest(code))).fetchone()
+    if row:
+        changed = db.execute("""
+            update web_accounts set password_hash=?,invite_hash=null,invite_until=null
+            where account_id=? and tenant=? and password_hash=? and disabled=0
+        """, (generate_password_hash(password), row["account_id"], tenant, row["password_hash"]))
+        if changed.rowcount == 1:
+            replacement = recovery_code(db, row["account_id"])
+            db.commit()
+            if session.get("salon_account") == row["account_id"]:
+                session.clear()
+            return recovery_page(salon, replacement)
+    db.rollback()
+    return render(salon, slug, "forgot", error="The email address or recovery code did not match.",
+                  email_enabled=bool(os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_KEY")
+                                     and os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_FROM")))
