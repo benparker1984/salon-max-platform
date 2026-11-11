@@ -9,7 +9,7 @@ from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from flask import Blueprint, abort, make_response, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, flash, make_response, redirect, render_template, request, session, url_for
 
 import provider as p
 import salon_web as web
@@ -154,6 +154,7 @@ def manage_pi_links(tenant):
         value = request.form.get("origin", "").strip()
         if not value:
             p.platform_execute("delete from web_pi_backoffices where tenant=? and terminal_id=?", (tenant, terminal))
+            flash("Pi back office link removed.", "pi-link")
         else:
             origin = private_pi_origin(value)
             if not origin:
@@ -171,6 +172,7 @@ def manage_pi_links(tenant):
                 db.rollback()
                 abort(409, "This terminal or address is already linked. Remove the old link first.")
             db.commit()
+            flash("Pi back office link saved. It is available on the salon owner’s dashboard.", "pi-link")
         return redirect(url_for("backoffice.manage_pi_links", tenant=tenant), code=303)
     return render(salon, "", "pi-links", tills=tills)
 

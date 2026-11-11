@@ -72,6 +72,9 @@
 {% elif mode == "pi-links" %}
 <section class="panel">
 <h2>Paired Pi back offices</h2>
+{% for message in get_flashed_messages(category_filter=['pi-link']) %}
+<p role="status">{{ message }}</p>
+{% endfor %}
 <p>Match the private address to the terminal ID shown in your pairing records. Salon owners can open these pages when connected to the Pi’s private network.</p>
 {% for till in tills %}
 <form method="post" class="catalog">
@@ -80,6 +83,7 @@
 <div><strong>{{ till.terminal_name }}</strong><br>{{ till.site_name }} · {{ till.terminal_id }}<br>Last seen {{ till.last_seen_at or 'not yet' }}</div>
 <label>Private Pi address<input name="origin" type="url" maxlength="128" value="{{ till.origin or '' }}" placeholder="http://100.64.0.10:5001"></label>
 <button>Save link</button>
+{% if till.origin %}<a href="{{ till.origin }}/" target="_blank" rel="noopener noreferrer">Open saved Pi back office</a>{% endif %}
 </form>
 {% else %}<p>Pair and license a till for this salon before linking its back office.</p>{% endfor %}
 <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=salon.business_account_public_id) }}">Back to business record</a>
