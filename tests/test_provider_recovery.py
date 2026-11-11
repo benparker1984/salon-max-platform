@@ -609,3 +609,36 @@ def test_salon_issues_customer_code_for_existing_account(platform, tenant):
         "csrf": csrf, "login": email, "password": "New linked password",
     }, follow_redirects=True)
     assert b"30 available" in result.data
+
+
+def test_customer_can_request_link_and_keep_existing_minutes(platform, tenant):
+    app, p = platform
+    business, _, terminal, headers = tenant
+    assert app.test_client().post("/v1/sync/events/push", json=sale(terminal), headers=headers).status_code == 200
+    customer_id = p.make_cloud_customer_public_id(business, 123)
+    path = f"/salon/{business}/customer"
+    browser = app.test_client()
+    browser.get(path + "/join")
+    with browser.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    result = browser.post(path + "/join", data={
+        "csrf": csrf, "full_name": "Link Test", "address_line": "1 Test Street", "town": "Test Town",
+        "postcode": "AB1 2CD", "phone": "01234567890", "email": "link-test@example.invalid",
+        "password": "New customer password",
+    }, follow_redirects=True)
+    assert b"Link my old salon account" in result.data
+    assert b"30 available" not in result.data
+    with browser.session_transaction() as state:
+        csrf, account_id = state["salon_csrf"], state["salon_account"]
+    assert browser.post(path + "/link", data={"csrf": csrf, "account_number": "123"}).status_code == 303
+    admin = owner_client(app)
+    manage = f"/platform/business/{business}/customer-access"
+    assert b"1 Test Street" in admin.get(manage).data
+    with admin.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    form = {"csrf": csrf, "action": "link-customer", "account_id": account_id, "customer_id": customer_id}
+    assert admin.post(manage, data=form).status_code == 400
+    form["verified"] = "yes"
+    assert admin.post(manage, data=form).status_code == 303
+    assert admin.post(manage, data=form).status_code == 303
+    assert b"30 available" in browser.get(f"/salon/{business}/").data

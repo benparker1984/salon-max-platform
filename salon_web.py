@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from flask import Blueprint, abort, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Blueprint, abort, flash, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import provider as p
@@ -37,6 +37,19 @@ def init_schema():
             unique(tenant, customer_id),
             check ((role = 'customer' and customer_id is not null)
                 or (role <> 'customer' and customer_id is null))
+        );
+        create table if not exists web_customer_profiles (
+            tenant text not null,
+            account_id text not null,
+            full_name text not null,
+            address_line text not null,
+            town text not null,
+            postcode text not null,
+            phone text not null,
+            old_account_number text not null default '',
+            requested_at text,
+            linked_at text,
+            primary key (tenant,account_id)
         );
         create table if not exists web_login_attempts (
             attempt_key text primary key,
@@ -144,6 +157,11 @@ def manage(salon, roles, endpoint, team_account=None):
     if request.method == "POST":
         verify_csrf()
         action = request.form.get("action")
+        if action == "link-customer":
+            if "customer" not in roles:
+                abort(403)
+            link_customer_record(tenant)
+            return redirect(url_for(endpoint, tenant=tenant), code=303)
         if action in {"disable", "reset"}:
             existing = p.platform_query_one("select role,disabled from web_accounts where tenant=? and account_id=?",
                                             (tenant, request.form.get("account_id")))
@@ -211,9 +229,107 @@ def manage(salon, roles, endpoint, team_account=None):
         select customer_public_id,first_name,last_name,email,account_number,customer_number from cloud_customers
         where business_account_public_id=? and status='active' order by last_name, first_name
     """, (tenant,)) if "customer" in roles else []
-    return page(salon=salon, mode="manage", roles=sorted(roles), customers=customers, invite=invite,
+    link_requests = p.platform_query_all("""
+        select profile.*, account.login from web_customer_profiles profile
+        join web_accounts account on account.tenant=profile.tenant and account.account_id=profile.account_id
+        where profile.tenant=? and profile.requested_at is not null and profile.linked_at is null
+          and account.role='customer' and account.disabled=0
+        order by profile.requested_at
+    """, (tenant,)) if "customer" in roles else []
+    return page(salon=salon, mode="manage", link_requests=link_requests, roles=sorted(roles), customers=customers, invite=invite,
                 team_account=team_account,
                 accounts=[account for account in accounts if account["role"] in roles])
+
+
+def link_customer_record(tenant):
+    if request.form.get("verified") != "yes":
+        abort(400, "Verify the customer's identity and email before linking.")
+    account_id = request.form.get("account_id", "")
+    customer_id = request.form.get("customer_id", "")
+    db = p.get_platform_db()
+    linked = db.execute("""
+        update web_customer_profiles set linked_at=?
+        where tenant=? and account_id=? and requested_at is not null and linked_at is null
+    """, (stamp(), tenant, account_id))
+    if linked.rowcount != 1:
+        db.rollback()
+        flash("This link request is no longer pending.", "customer-link")
+        return
+    updated = db.execute("""
+        update web_accounts set customer_id=?, invite_hash=null, invite_until=null
+        where tenant=? and account_id=? and role='customer' and disabled=0 and password_hash is not null
+          and exists (
+            select 1 from cloud_customers where business_account_public_id=?
+            and customer_public_id=? and status='active'
+          )
+        and not exists (
+            select 1 from web_accounts other where other.tenant=? and other.customer_id=?
+        )
+    """, (customer_id, tenant, account_id, tenant, customer_id, tenant, customer_id))
+    if updated.rowcount != 1:
+        db.rollback()
+        flash("Choose an active salon account that is not already linked.", "customer-link")
+        return
+    db.commit()
+    flash("Customer account linked. Their existing minutes are now visible online.", "customer-link")
+
+
+@bp.route("/salon/<tenant>/customer/join", methods=["GET", "POST"])
+def customer_join(tenant):
+    from backoffice import valid_email
+
+    salon = tenant_record(tenant)
+    details = {}
+    error = None
+    if request.method == "POST":
+        verify_csrf()
+        details = {field: request.form.get(field, "").strip()
+                   for field in ("full_name", "address_line", "town", "postcode", "phone", "email")}
+        email = details["email"].lower()
+        password = request.form.get("password", "")
+        if (any(not value or len(value) > 150 for field, value in details.items() if field != "email")
+                or not valid_email(email) or not 12 <= len(password) <= 128
+                or not 7 <= len(re.sub(r"\D", "", details["phone"])) <= 15):
+            error = "Check your contact details and choose a password of 12 to 128 characters."
+        else:
+            throttle(tenant, f"customer-join:{email}")
+            account_id = secrets.token_hex(20)
+            password_hash = generate_password_hash(password)
+            db = p.get_platform_db()
+            account = db.execute("""
+                insert into web_accounts (account_id,tenant,login,role,customer_id,password_hash)
+                values (?,?,?,'customer',?,?) on conflict do nothing
+            """, (account_id, tenant, email, "pending:" + account_id, password_hash))
+            if account.rowcount == 1:
+                db.execute("""
+                    insert into web_customer_profiles
+                    (tenant,account_id,full_name,address_line,town,postcode,phone)
+                    values (?,?,?,?,?,?,?)
+                """, (tenant, account_id, details["full_name"], details["address_line"],
+                      details["town"], details["postcode"], details["phone"]))
+                db.commit()
+                session.clear()
+                session["salon_account"] = account_id
+                session["salon_proof"] = digest(password_hash)
+                return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
+            db.rollback()
+            error = "If you already have online access, sign in or reset your password."
+    return page(salon=salon, mode="customer-join", details=details, error=error)
+
+
+@bp.post("/salon/<tenant>/customer/link")
+def request_customer_link(tenant):
+    tenant_record(tenant)
+    account = member(tenant, {"customer"})
+    verify_csrf()
+    old_number = request.form.get("account_number", "").strip()
+    if len(old_number) > 80:
+        abort(400)
+    p.platform_execute("""
+        update web_customer_profiles set old_account_number=?, requested_at=?
+        where tenant=? and account_id=? and requested_at is null and linked_at is null
+    """, (old_number, stamp(), tenant, account["account_id"]))
+    return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
 
 
 @bp.route("/salon/<tenant>/activate/<token>", methods=["GET", "POST"])
@@ -231,7 +347,9 @@ def activate(tenant, token):
     if row["role"] == "customer" and not p.platform_query_one("""
         select 1 from cloud_customers where business_account_public_id=? and customer_public_id=?
         and status='active' and (trim(email)='' or lower(trim(email))=?)
-    """, (tenant, row["customer_id"], row["login"])):
+        union all
+        select 1 from web_customer_profiles where tenant=? and account_id=? and linked_at is null
+    """, (tenant, row["customer_id"], row["login"], tenant, row["account_id"])):
         abort(404, "Ask your salon for a new setup link.")
     team_office = None
     if row["role"] in TEAM:
@@ -391,6 +509,12 @@ def dashboard(tenant):
     history = []
     sessions = []
     if account["role"] == "customer":
+        profile = p.platform_query_one("""
+            select requested_at from web_customer_profiles
+            where tenant=? and account_id=? and linked_at is null
+        """, (tenant, account["account_id"]))
+        if profile:
+            return page(salon=salon, mode="customer-unlinked", requested=bool(profile["requested_at"]))
         row = p.platform_query_one("""
             select m.minutes_available from cloud_customers c left join cloud_customer_minute_summary m
             on m.business_account_public_id=c.business_account_public_id and m.customer_public_id=c.customer_public_id

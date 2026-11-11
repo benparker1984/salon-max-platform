@@ -23,6 +23,36 @@
 {% endif %}
 {% if mode == 'choose' %}
 <form method="get"><label>Salon code<input name="code" required maxlength="100"></label><button>Open salon</button></form>
+{% elif mode == 'customer-join' %}
+<h2>Create your online account</h2>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Full name<input name="full_name" autocomplete="name" maxlength="150" value="{{ details.full_name }}" required></label>
+<label>Street address<input name="address_line" autocomplete="street-address" maxlength="150" value="{{ details.address_line }}" required></label>
+<label>Town or city<input name="town" autocomplete="address-level2" maxlength="150" value="{{ details.town }}" required></label>
+<label>Postcode<input name="postcode" autocomplete="postal-code" maxlength="150" value="{{ details.postcode }}" required></label>
+<label>Phone number<input name="phone" type="tel" autocomplete="tel" maxlength="150" value="{{ details.phone }}" required></label>
+<label>Email address<input name="email" type="email" autocomplete="email" maxlength="254" value="{{ details.email }}" required></label>
+<label>Password (at least 12 characters)<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
+<button>Create account</button>
+</form>
+<p><a href="{{ url_for('salon.customer_login', tenant=tenant) }}">Back to sign in</a></p>
+{% elif mode == 'customer-unlinked' %}
+<h2>Your salon account</h2>
+{% if requested %}
+<p>Your request is with the salon. Once they confirm the match, your existing minutes and history will appear here.</p>
+{% else %}
+<p>Already a customer? Ask the salon to link your existing minutes and visit history.</p>
+<form method="post" action="{{ url_for('salon.request_customer_link', tenant=tenant) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Old salon account number (optional)<input name="account_number" maxlength="80"></label>
+<button>Link my old salon account</button>
+</form>
+{% endif %}
+<form method="post" action="{{ url_for('salon.logout', tenant=tenant) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><button>Sign out</button>
+</form>
 {% elif mode == 'customer-access' %}
 <h2>{{ 'Register for online access' if action == 'register' else 'Reset your password' }}</h2>
 {% if submitted %}
@@ -35,6 +65,7 @@
 <button>Send me a link</button>
 </form>
 {% else %}
+{% if action == 'register' %}<p><a href="{{ url_for('salon.customer_join', tenant=tenant) }}">Create your online account</a></p>{% endif %}
 <p>Ask your salon for a private {{ 'setup code or link' if action == 'register' else 'reset link' }}.</p>
 {% endif %}
 {% if action == 'register' %}
@@ -60,7 +91,8 @@
 <button>{{ 'Save password' if mode == 'activate' else 'Sign in' }}</button>
 </form>
 {% if mode == 'login' and customer_only %}
-<p><a href="{{ url_for('salon.customer_access', tenant=tenant, action='register') }}">Register for online access</a></p>
+<p><a href="{{ url_for('salon.customer_join', tenant=tenant) }}">Create an online account</a></p>
+<p><a href="{{ url_for('salon.customer_access', tenant=tenant, action='register') }}">Use a salon setup code</a></p>
 <p><a href="{{ url_for('salon.customer_access', tenant=tenant, action='reset') }}">Forgot your password?</a></p>
 {% endif %}
 {% elif mode == 'dashboard' %}
@@ -153,6 +185,26 @@
 {% set customer_url = 'https://www.salonmax.co.uk' ~ url_for('salon.customer_login', tenant=tenant) %}
 <p><a href="{{ customer_url }}">Open {{ salon.business_name }} customer portal</a></p>
 <label>Link to share with customers<input readonly value="{{ customer_url }}"></label>
+{% for message in get_flashed_messages(category_filter=['customer-link']) %}<p role="status">{{ message }}</p>{% endfor %}
+{% if 'customer' in roles %}
+<h3>Account link requests</h3>
+{% for item in link_requests %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="action" value="link-customer">
+<input type="hidden" name="account_id" value="{{ item.account_id }}">
+<p><strong>{{ item.full_name }}</strong><br>
+{{ item.address_line }}, {{ item.town }}, {{ item.postcode }}<br>
+{{ item.phone }}<br>{{ item.login }}
+{% if item.old_account_number %}<br>Old account number: {{ item.old_account_number }}{% endif %}</p>
+<label>Existing salon account<select name="customer_id" required><option value="">Choose an account</option>
+{% for customer in customers %}<option value="{{ customer.customer_public_id }}">{{ customer.first_name }} {{ customer.last_name }} ({{ customer.account_number or customer.customer_number or customer.email }})</option>{% endfor %}
+</select></label>
+<label><input type="checkbox" name="verified" value="yes" required> I verified the customer's identity and confirmed that they control the email above.</label>
+<button>Link account and existing minutes</button>
+</form>
+{% else %}<p>No requests waiting.</p>{% endfor %}
+{% endif %}
 {% if invite %}
 <p><a href="{{ invite }}" target="_blank" rel="noopener noreferrer">Open password setup link</a></p>
 <label>One-time link to share privately<input readonly aria-label="Activation link" value="https://www.salonmax.co.uk{{ invite }}"></label>
