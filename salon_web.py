@@ -4,7 +4,7 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, abort, make_response, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Blueprint, abort, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import provider as p
@@ -169,7 +169,7 @@ def activate(tenant, token):
         abort(404)
     hashed = digest(token)
     row = p.platform_query_one("""
-        select account_id from web_accounts where tenant=? and invite_hash=? and invite_until>? and disabled=0
+        select account_id,role from web_accounts where tenant=? and invite_hash=? and invite_until>? and disabled=0
     """, (tenant, hashed, stamp()))
     if not row:
         abort(404)
@@ -186,19 +186,29 @@ def activate(tenant, token):
         db.commit()
         if cursor.rowcount != 1:
             abort(404)
-        return redirect(url_for("salon.login", tenant=tenant), code=303)
+        login_endpoint = "salon.customer_login" if row["role"] == "customer" else "salon.login"
+        return redirect(url_for(login_endpoint, tenant=tenant), code=303)
     return page(salon=salon, mode="activate")
 
 
 @bp.route("/salon/<tenant>/login", methods=["GET", "POST"])
 def login(tenant):
+    return sign_in(tenant)
+
+
+@bp.route("/salon/<tenant>/customer", methods=["GET", "POST"])
+def customer_login(tenant):
+    return sign_in(tenant, customer_only=True)
+
+
+def sign_in(tenant, customer_only=False):
     salon = tenant_record(tenant)
     error = None
     if request.method == "POST":
         verify_csrf()
         login_name = request.form.get("login", "").strip().lower()
         password = request.form.get("password", "")
-        role = request.form.get("role")
+        role = "customer" if customer_only else request.form.get("role")
         if role not in ROLES or len(login_name) > 254 or len(password) > 128:
             abort(400)
         throttle(tenant, f"{role}:{login_name}")
@@ -211,14 +221,14 @@ def login(tenant):
             session["salon_account"] = row["account_id"]
             return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
         error = "The login details did not match."
-    return page(salon=salon, mode="login", error=error)
+    return page(salon=salon, mode="login", error=error, customer_only=customer_only)
 
 
 @bp.get("/salon/<tenant>/")
 def dashboard(tenant):
     salon = tenant_record(tenant)
     if not session.get("salon_account"):
-        return redirect(url_for("salon.login", tenant=tenant))
+        return redirect(url_for("salon.customer_login", tenant=tenant))
     account = member(tenant, ROLES)
     minutes = None
     if account["role"] == "customer":
@@ -255,3 +265,27 @@ def choose_salon():
 @bp.get("/salon/service-worker.js")
 def service_worker():
     return send_from_directory(p.app.static_folder, "salon-worker.js", max_age=0)
+
+
+@bp.get("/salon/<tenant>/manifest.webmanifest")
+def manifest(tenant):
+    salon = tenant_record(tenant)
+    scope = url_for("salon.dashboard", tenant=tenant)
+    response = jsonify({
+        "id": scope,
+        "name": salon["business_name"] + " Customer Portal",
+        "short_name": salon["business_name"],
+        "start_url": scope,
+        "scope": scope,
+        "display": "standalone",
+        "background_color": "#0c1523",
+        "theme_color": "#0c1523",
+        "icons": [
+            {"src": url_for("static", filename=f"salon-icon-{size}.png"),
+             "sizes": f"{size}x{size}", "type": "image/png"}
+            for size in (192, 512)
+        ],
+    })
+    response.mimetype = "application/manifest+json"
+    response.headers["Cache-Control"] = "no-cache"
+    return response

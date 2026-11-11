@@ -330,3 +330,49 @@ def test_signed_payment_and_consent_withdrawal(platform, tenant, monkeypatch):
         assert p.platform_query_one("select status from web_marketing_outbox where tenant=?", (business,))["status"] == "suppressed"
         assert p.platform_query_one("select count(*) as count from cloud_customer_minute_ledger where source_reference=?", (order,))["count"] == 1
         assert p.platform_query_one("select minutes_available from cloud_customer_minute_summary where customer_public_id=?", (customer,))["minutes_available"] == 30
+
+
+def test_customer_portals_keep_same_email_separate(platform, tenant):
+    from werkzeug.security import generate_password_hash
+
+    app, p = platform
+    first, *_ = tenant
+    second = "biz_other_" + uuid.uuid4().hex[:12]
+    email = "same@example.invalid"
+    with app.app_context():
+        p.ensure_cloud_business_account(second, "Other salon")
+        for business, balance, password in [(first, 19, "First salon password"), (second, 73, "Second salon password")]:
+            customer = uuid.uuid4().hex
+            p.platform_execute(
+                "insert into cloud_customers (business_account_public_id,customer_public_id,email,status) values (?,?,?,'active')",
+                (business, customer, email),
+            )
+            p.platform_execute(
+                "insert into cloud_customer_minute_summary (business_account_public_id,customer_public_id,minutes_available) values (?,?,?)",
+                (business, customer, balance),
+            )
+            p.platform_execute(
+                "insert into web_accounts (account_id,tenant,login,role,customer_id,password_hash) values (?,?,?,'customer',?,?)",
+                (uuid.uuid4().hex, business, email, customer, generate_password_hash(password)),
+            )
+    client = app.test_client()
+    for business, wrong_password, correct_password, balance in [
+        (first, "Second salon password", "First salon password", 19),
+        (second, "First salon password", "Second salon password", 73),
+    ]:
+        base = f"/salon/{business}/"
+        manifest = client.get(base + "manifest.webmanifest").json
+        assert manifest["id"] == manifest["start_url"] == manifest["scope"] == base
+        response = client.get(base + "customer")
+        assert b"Email address" in response.data and b"Account type" not in response.data
+        with client.session_transaction() as state:
+            csrf = state["salon_csrf"]
+        assert b"did not match" in client.post(base + "customer", data={
+            "csrf": csrf, "login": email, "password": wrong_password
+        }).data
+        assert client.post(base + "customer", data={
+            "csrf": csrf, "login": email, "password": correct_password
+        }).status_code == 303
+        assert f"{balance} available".encode() in client.get(base).data
+        other = second if business == first else first
+        assert client.get(f"/salon/{other}/").status_code == 403

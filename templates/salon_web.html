@@ -1,18 +1,18 @@
 <!doctype html>
 <html lang="en">
+{% set tenant = salon.business_account_public_id %}
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ salon.business_name }} | Salon Max</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='salon-web.css') }}">
 <meta name="theme-color" content="#0c1523">
-<link rel="manifest" href="{{ url_for('static', filename='salon.webmanifest') }}">
+<link rel="manifest" href="{{ url_for('salon.manifest', tenant=tenant) if tenant else url_for('static', filename='salon.webmanifest') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='salon-icon-192.png') }}">
 <script src="{{ url_for('static', filename='salon-pwa.js') }}" defer></script>
 </head>
 <body><main>
 <header><span>Salon Max</span><h1>{{ salon.business_name }}</h1></header>
-{% set tenant = salon.business_account_public_id %}
 {% if mode == 'choose' %}
 <form method="get"><label>Salon code<input name="code" required maxlength="100"></label><button>Open salon</button></form>
 {% elif mode in ('activate','login') %}
@@ -21,8 +21,10 @@
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 {% if mode == 'login' %}
+{% if not customer_only %}
 <label>Account type<select name="role"><option value="customer">Customer</option><option value="owner">Salon owner</option><option value="staff">Salon staff</option></select></label>
-<label>Login<input name="login" autocomplete="username" required maxlength="254"></label>
+{% endif %}
+<label>{{ 'Email address' if customer_only else 'Login' }}<input name="login" autocomplete="username" required maxlength="254"></label>
 {% endif %}
 <label>Password<input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'activate' else 'current-password' }}" {% if mode == 'activate' %}minlength="12"{% endif %} maxlength="128" required></label>
 <button>{{ 'Activate account' if mode == 'activate' else 'Sign in' }}</button>
@@ -43,6 +45,9 @@
 {% endif %}
 {% else %}
 <h2>Salon workspace</h2>
+{% set customer_url = 'https://www.salonmax.co.uk' ~ url_for('salon.customer_login', tenant=tenant) %}
+<p><a href="{{ customer_url }}">Open your customer portal</a></p>
+<label>Link to share with customers<input readonly value="{{ customer_url }}"></label>
 <a href="{{ url_for('salon.provision_team', tenant=tenant) }}">Manage web access</a>
 {% if account.role == 'owner' %}<p><a href="{{ url_for('checkout.manage', tenant=tenant) }}">Manage packages</a></p><p><a href="{{ url_for('marketing.campaigns', tenant=tenant) }}">Marketing and outbox</a></p>{% endif %}
 {% endif %}
@@ -92,6 +97,9 @@
 <a href="{{ url_for('salon.dashboard', tenant=tenant) }}">Back to salon</a>
 {% elif mode == 'manage' %}
 <h2>Web access</h2>
+{% set customer_url = 'https://www.salonmax.co.uk' ~ url_for('salon.customer_login', tenant=tenant) %}
+<p><a href="{{ customer_url }}">Open {{ salon.business_name }} customer portal</a></p>
+<label>Link to share with customers<input readonly value="{{ customer_url }}"></label>
 {% if invite %}<p>Share this one-time link privately. It expires in 24 hours.</p><input readonly aria-label="Activation link" value="https://www.salonmax.co.uk{{ invite }}">{% endif %}
 {% for role in roles %}
 <form method="post">

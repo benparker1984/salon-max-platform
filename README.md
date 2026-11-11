@@ -68,7 +68,7 @@ used for the sealed restore, and an arbitrary test `SALONMAX_SECRET_KEY`, instal
 Before deploying, validate recovery idempotence, protected routes, all console
 screens, duplicate/concurrent sync delivery, rollback, tenant boundaries, imports,
 corrections, media and export. After deploying, check `/healthz` for
-`release=salon-web-v1` and `recovery_applied=true`, then verify authenticated
+`release=salon-web-v2` and `recovery_applied=true`, then verify authenticated
 pages and the public /salon/ portal.
 
 ## Hosted salon portal
@@ -79,9 +79,11 @@ customers in their own salon. Send the activation link privately after checking 
 recipient's identity. Links are single use and expire after 24 hours. Customers
 sign in with the email address from their existing salon customer record.
 
-The public entry point is /salon/. A salon code is its business public ID. The web
-manifest and service worker support installation and a generic offline page. The
-worker caches only that offline page.
+Share the customer portal link shown under **Web access** or in the salon
+workspace. It opens the named salon directly at /salon/<business-public-id>/customer.
+Customers with accounts at multiple salons sign in separately at each salon.
+Each salon has its own installable manifest and launch URL. The service worker
+caches only the generic offline page.
 
 ### Payments and marketing
 
