@@ -245,7 +245,7 @@ def test_salon_login_invite_and_tenant_isolation(platform, tenant):
     with admin.session_transaction() as state:
         csrf = state["salon_csrf"]
     assert admin.post(path, data={"role": "owner", "login": "owner"}).status_code == 400
-    result = admin.post(path, data={"role": "owner", "login": "owner", "csrf": csrf})
+    result = admin.post(path, data={"role": "owner", "login": "owner@example.invalid", "csrf": csrf})
     link = re.search(rb'/salon/[^/]+/activate/[A-Za-z0-9_-]+', result.data)[0].decode()
     browser = app.test_client()
     assert browser.get(link).status_code == 200
@@ -255,7 +255,7 @@ def test_salon_login_invite_and_tenant_isolation(platform, tenant):
     assert browser.post(link, data={"csrf": csrf, "password": password}).status_code == 303
     assert browser.get(link).status_code == 404
     assert browser.post(f"/salon/{business}/login", data={
-        "csrf": csrf, "login": "owner", "role": "owner", "password": password
+        "csrf": csrf, "login": "owner@example.invalid", "role": "owner", "password": password
     }).status_code == 303
     assert browser.get(f"/salon/{business}/offers").status_code == 200
     assert browser.get(f"/salon/{other}/offers").status_code == 403
@@ -376,3 +376,76 @@ def test_customer_portals_keep_same_email_separate(platform, tenant):
         assert f"{balance} available".encode() in client.get(base).data
         other = second if business == first else first
         assert client.get(f"/salon/{other}/").status_code == 403
+
+
+def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
+    import json
+    import re
+    from contextlib import nullcontext
+
+    import backoffice
+
+    app, p = platform
+    suffix = uuid.uuid4().hex[:8]
+    name = f"Ultra Violet {suffix}"
+    email = f"{suffix}@example.invalid"
+    admin = owner_client(app)
+    response = admin.post("/platform/onboard/create", data={
+        "business_name": name, "site_name": "Main", "terminal_name": "Till 1", "contact_email": email,
+    })
+    assert response.status_code == 302
+    path = urlparse(response.location).path
+    tenant = path.rsplit("/", 1)[-1]
+    address = f"/salonmax-ultraviolet{suffix}-backoffice"
+    assert address.encode() in admin.get(path).data
+    with app.app_context():
+        assert p.platform_query_one("select login from web_accounts where tenant=? and role='owner'", (tenant,))["login"] == email
+        other = "biz_other_" + suffix
+        p.ensure_cloud_business_account(other, "Other Business " + suffix)
+        other_address = "/" + backoffice.setup(other, "Other Business " + suffix)
+    management = f"/platform/business/{tenant}/web-access"
+    assert b"Awaiting setup" in admin.get(management).data
+    with admin.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    result = admin.post(management, data={"csrf": csrf, "role": "owner", "login": email})
+    link = re.search(rb'/salon/[^/]+/activate/[A-Za-z0-9_-]+', result.data)[0].decode()
+    browser = app.test_client()
+    assert browser.get(address).location == address + "/sign-in"
+    assert b"Forgot your password?" in browser.get(address + "/sign-in").data
+    assert browser.get(link).status_code == 200
+    with browser.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    assert browser.post(link, data={"csrf": csrf, "password": "First valid password"}).status_code == 303
+    assert browser.post(address + "/sign-in", data={
+        "csrf": csrf, "email": email, "role": "owner", "password": "First valid password"
+    }).status_code == 303
+    assert browser.get(address).status_code == 200
+    for section in ("settings", "sunbeds", "customers", "pricing", "store", "transactions", "tills", "reports"):
+        assert browser.get(f"{address}/{section}").status_code == 200, section
+    assert browser.get(other_address + "/customers").status_code == 403
+    assert browser.post(other_address + "/settings", data={"phone": "unauthorised"}).status_code == 403
+
+    sent = []
+    monkeypatch.setenv("SALONMAX_TRANSACTIONAL_EMAIL_KEY", "fixture-key")
+    monkeypatch.setenv("SALONMAX_TRANSACTIONAL_EMAIL_FROM", "fixture@example.invalid")
+    def deliver(message, **kwargs):
+        sent.append(json.loads(message.data))
+        return nullcontext()
+    monkeypatch.setattr(backoffice, "urlopen", deliver)
+    resetter = app.test_client()
+    reset_path = address + "/forgot-password"
+    assert resetter.get(reset_path).status_code == 200
+    with resetter.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    assert resetter.post(reset_path, data={"csrf": csrf, "email": email}).status_code == 200
+    assert sent[0]["to"] == [email]
+    reset_link = re.search(r'/salon/[^/]+/activate/[A-Za-z0-9_-]+', sent[0]["text"])[0]
+    assert resetter.post(reset_link, data={"csrf": csrf, "password": "Second valid password"}).status_code == 303
+    assert resetter.get(reset_link).status_code == 404
+    assert browser.get(address).status_code == 403
+    assert b"did not match" in resetter.post(address + "/sign-in", data={
+        "csrf": csrf, "email": email, "role": "owner", "password": "First valid password"
+    }).data
+    assert resetter.post(address + "/sign-in", data={
+        "csrf": csrf, "email": email, "role": "owner", "password": "Second valid password"
+    }).status_code == 303

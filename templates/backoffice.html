@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ salon.business_name }} | Salon Max Back Office</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='backoffice.css') }}">
+</head>
+<body><main>
+<header class="panel"><p>Salon Max Back Office</p><h1>{{ salon.business_name }}</h1></header>
+{% if mode == "login" %}
+<section class="panel auth">
+<h2>Back office sign in</h2>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Email address<input name="email" type="email" autocomplete="username" maxlength="254" required></label>
+<label>Account type<select name="role"><option value="owner">Owner</option><option value="staff">Staff</option></select></label>
+<label>Password<input type="password" name="password" autocomplete="current-password" required maxlength="128"></label>
+<button>Sign in</button>
+</form>
+<a href="{{ url_for('backoffice.workspace', slug=slug, section='forgot-password') }}">Forgot your password?</a>
+</section>
+{% elif mode == "forgot" %}
+<section class="panel auth">
+<h2>Reset your password</h2>
+{% if not email_enabled %}
+<p>Password reset email is unavailable. Contact your salon owner or Salon Max support for a private setup link.</p>
+{% elif submitted %}
+<p>If this email belongs to a back office account, you’ll receive a reset link.</p>
+{% else %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Email address<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+<button>Send reset link</button>
+</form>
+{% endif %}
+<a href="{{ url_for('backoffice.workspace', slug=slug, section='sign-in') }}">Back to sign in</a>
+</section>
+{% else %}
+<nav class="panel" aria-label="Back office">
+{% for key, title in sections.items() %}
+{% if key != 'packages' or account.role == 'owner' %}
+<a href="{{ url_for('backoffice.workspace', slug=slug, section=key) }}" {% if section == key %}aria-current="page"{% endif %}>{{ title }}</a>
+{% endif %}
+{% endfor %}
+<form method="post" action="{{ url_for('backoffice.sign_out', slug=slug) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><button>Sign out</button>
+</form>
+</nav>
+<section class="panel"><h2>{{ sections[section] }}</h2>
+{% if section == 'dashboard' %}
+<a href="{{ url_for('salon.customer_login', tenant=salon.business_account_public_id) }}">Customer portal</a>
+{% if account.role == 'owner' %}<a href="{{ url_for('marketing.campaigns', tenant=salon.business_account_public_id) }}">Marketing and outbox</a>{% endif %}
+{% endif %}
+{% if section == 'settings' %}
+{% if account.role == 'owner' %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Public contact email<input name="email" type="email" value="{{ salon.contact_email }}" maxlength="254"></label>
+<label>Contact phone<input name="phone" type="tel" value="{{ salon.contact_phone }}" maxlength="40"></label>
+<button>Save contact details</button>
+</form>
+{% else %}<p>{{ salon.contact_email }} · {{ salon.contact_phone }}</p>{% endif %}
+{% endif %}
+{% if metrics %}
+{% if section == 'reports' %}<p>Figures reflect the most recent 100 synced till transactions.</p>{% endif %}
+<dl class="metrics">{% for label, value in metrics.items() %}<div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
+{% endif %}
+{% if section == 'tills' %}<p>Device status from cloud check-ins.</p>{% endif %}
+{% if section == 'customers' %}
+<p>Up to 250 active customer records from this salon.</p>
+<a href="{{ url_for('salon.provision_team', tenant=salon.business_account_public_id) }}">Manage customer access</a>
+{% endif %}
+{% if columns %}
+<div class="table"><table><thead><tr>{% for title in columns %}<th scope="col">{{ title }}</th>{% endfor %}</tr></thead>
+<tbody>{% for row in rows %}<tr>{% for value in row %}<td>{{ value if value is not none else '—' }}</td>{% endfor %}</tr>
+{% else %}<tr><td colspan="{{ columns|length }}">No records yet.</td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+{% if catalog %}
+<p>Hosted records for this salon. Configure till settings on the till.</p>
+{% if account.role == 'owner' %}
+<form method="post" class="catalog">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>{{ catalog[0] }}<input name="name" maxlength="100" required></label>
+<label>{{ catalog[1] }}<input name="value" type="number" min="0" max="1000000" required></label>
+<button>Add</button>
+</form>
+{% endif %}
+{% for name, value, item_id in rows %}
+{% if account.role == 'owner' %}
+<form method="post" class="catalog">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="item_id" value="{{ item_id }}">
+<label>{{ catalog[0] }}<input name="name" value="{{ name }}" maxlength="100" required></label>
+<label>{{ catalog[1] }}<input name="value" type="number" value="{{ value }}" min="0" max="1000000" required></label>
+<button>Save</button><button name="action" value="delete">Remove</button>
+</form>
+{% else %}<p>{{ name }} · {{ value }}</p>{% endif %}
+{% endfor %}
+{% endif %}
+</section>
+{% endif %}
+</main></body></html>

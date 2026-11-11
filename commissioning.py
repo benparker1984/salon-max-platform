@@ -743,6 +743,7 @@ def create_onboarded_business():
             """,
             (public_id, site_id, terminal_name, timestamp, timestamp),
         )
+    g.new_salon_backoffice = (public_id, name, request.form.get("contact_email", "").strip())
     return redirect(url_for("business_detail", public_id=public_id, notice=f"Salon onboarded. Pairing code: {pairing_code}"))
 
 

@@ -45,6 +45,7 @@
 {% endif %}
 {% else %}
 <h2>Salon workspace</h2>
+{% if office_url(tenant) %}<p><a href="{{ office_url(tenant) }}">Open your back office</a></p>{% endif %}
 {% set customer_url = 'https://www.salonmax.co.uk' ~ url_for('salon.customer_login', tenant=tenant) %}
 <p><a href="{{ customer_url }}">Open your customer portal</a></p>
 <label>Link to share with customers<input readonly value="{{ customer_url }}"></label>
@@ -97,6 +98,7 @@
 <a href="{{ url_for('salon.dashboard', tenant=tenant) }}">Back to salon</a>
 {% elif mode == 'manage' %}
 <h2>Web access</h2>
+{% if office_url(tenant) %}<p><a href="{{ office_url(tenant) }}">Open hosted back office</a></p>{% endif %}
 {% set customer_url = 'https://www.salonmax.co.uk' ~ url_for('salon.customer_login', tenant=tenant) %}
 <p><a href="{{ customer_url }}">Open {{ salon.business_name }} customer portal</a></p>
 <label>Link to share with customers<input readonly value="{{ customer_url }}"></label>
@@ -107,12 +109,13 @@
 <input type="hidden" name="role" value="{{ role }}">
 {% if role == 'customer' %}
 <label>Customer<select name="customer_id" required><option value="">Choose a customer</option>{% for customer in customers %}<option value="{{ customer.customer_public_id }}">{{ customer.first_name }} {{ customer.last_name }} ({{ customer.email }})</option>{% endfor %}</select></label>
-{% else %}<label>{{ role|capitalize }} login<input name="login" required maxlength="254"></label>{% endif %}
+{% else %}<label>{{ role|capitalize }} email<input name="login" type="email" required maxlength="254"></label>{% endif %}
 <button>Create {{ role }} invite</button>
 </form>
 {% endfor %}
 <ul>{% for account in accounts %}
-<li>{{ account.login }} ({{ account.role }}){% if account.disabled %} · Disabled{% else %}
+<li>{{ account.login }} ({{ account.role }}){% if account.disabled %} · Disabled{% else %} · {{ account.setup_status }}
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="reset"><input type="hidden" name="account_id" value="{{ account.account_id }}"><button>Create password setup link</button></form>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="disable"><input type="hidden" name="account_id" value="{{ account.account_id }}"><button>Disable</button></form>
 {% endif %}</li>{% endfor %}</ul>
 {% endif %}

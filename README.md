@@ -68,10 +68,29 @@ used for the sealed restore, and an arbitrary test `SALONMAX_SECRET_KEY`, instal
 Before deploying, validate recovery idempotence, protected routes, all console
 screens, duplicate/concurrent sync delivery, rollback, tenant boundaries, imports,
 corrections, media and export. After deploying, check `/healthz` for
-`release=salon-web-v2` and `recovery_applied=true`, then verify authenticated
+`release=salon-web-v3` and `recovery_applied=true`, then verify authenticated
 pages and the public /salon/ portal.
 
 ## Hosted salon portal
+
+### Hosted back office
+
+Business onboarding records a stable back office address such as
+`https://www.salonmax.co.uk/salonmax-ultraviolet-backoffice` and prepares the
+owner account from the onboarding email. The address appears on the business
+record in the provider console. Open **Salon owner web access** to issue a
+one-time password setup link. The owner chooses a password privately. The
+provider console lists the login email and setup status.
+
+The hosted back office shows synced customers, recent till transactions and
+device check-ins, and links to staff access, online packages and marketing.
+Sunbed, pricing and store records managed here are hosted records. Hardware
+settings, local inventory, and till sessions are still managed on the till.
+
+Set `SALONMAX_TRANSACTIONAL_EMAIL_KEY` to a Resend API key and
+`SALONMAX_TRANSACTIONAL_EMAIL_FROM` to a verified sending address to enable
+forgotten password email. A salon owner can issue staff reset links, and the
+platform owner can issue salon owner reset links from **Web access**.
 
 Open a salon in the provider console and choose **Salon owner web access** to issue
 an owner invite. The salon owner can invite staff and customers. Staff can invite

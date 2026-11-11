@@ -6214,6 +6214,9 @@ def salonmax_create_business():
             notes,
         ),
     )
+    if APP_ROLE == "cloud":
+        from backoffice import setup
+        setup(business_account_public_id, business_name, contact_email)
     return redirect(
         url_for(
             "salonmax_owner_business_detail",
@@ -6533,6 +6536,9 @@ def salonmax_create_business_with_first_site():
             pairing_code,
         ),
     )
+    if APP_ROLE == "cloud":
+        from backoffice import setup
+        setup(business_account_public_id, business_name, contact_email)
     return redirect(
         url_for(
             "salonmax_owner_business_detail",

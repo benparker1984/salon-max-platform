@@ -2,6 +2,8 @@
 {% block content %}
 <div class="panel"><a class="button" href="{{ url_for('business_detail', public_id=snapshot.business_account_public_id) }}">Commissioning, salon logo and sunbed pictures</a> <a class="button" href="{{ url_for('salon.provision_owner', tenant=snapshot.business_account_public_id) }}">Salon owner web access</a></div>
 <div class="stack">
+    {% set backoffice = office_url(snapshot.business_account_public_id) %}
+    {% if backoffice %}<div class="panel"><a href="{{ backoffice }}">Open hosted back office</a><br><code>https://www.salonmax.co.uk{{ backoffice }}</code></div>{% endif %}
     {% if notice %}
     <div class="alert warning">{{ notice }}</div>
     {% endif %}

@@ -57,6 +57,9 @@ def member(tenant, roles):
                                    (tenant, identity)) if identity else None
     if not account or account["role"] not in roles:
         abort(403)
+    if account["password_hash"] and session.get("salon_proof") != digest(account["password_hash"]):
+        session.clear()
+        abort(403)
     return account
 
 
@@ -119,14 +122,21 @@ def manage(salon, roles, endpoint):
     if request.method == "POST":
         verify_csrf()
         action = request.form.get("action")
-        if action == "disable":
-            existing = p.platform_query_one("select role from web_accounts where tenant=? and account_id=?",
+        if action in {"disable", "reset"}:
+            existing = p.platform_query_one("select role,disabled from web_accounts where tenant=? and account_id=?",
                                             (tenant, request.form.get("account_id")))
-            if not existing or existing["role"] not in roles:
+            if not existing or existing["role"] not in roles or existing["disabled"]:
                 abort(404)
-            p.platform_execute("update web_accounts set disabled=1, invite_hash=null where tenant=? and account_id=?",
-                               (tenant, request.form.get("account_id")))
-            return redirect(url_for(endpoint, tenant=tenant), code=303)
+            if action == "disable":
+                p.platform_execute("update web_accounts set disabled=1, invite_hash=null where tenant=? and account_id=?",
+                                   (tenant, request.form.get("account_id")))
+                return redirect(url_for(endpoint, tenant=tenant), code=303)
+            token = secrets.token_urlsafe(32)
+            p.platform_execute("""
+                update web_accounts set invite_hash=?,invite_until=? where tenant=? and account_id=? and disabled=0
+            """, (digest(token), stamp(1800), tenant, request.form.get("account_id")))
+            invite = url_for("salon.activate", tenant=tenant, token=token)
+    if request.method == "POST" and invite is None:
         role = request.form.get("role")
         login = request.form.get("login", "").strip().lower()
         customer_id = None
@@ -142,17 +152,27 @@ def manage(salon, roles, endpoint):
             customer_id, login = customer["customer_public_id"], customer["email"].strip().lower()
         if not login or len(login) > 254 or any(char.isspace() for char in login):
             abort(400, "Enter a valid login.")
+        if role in TEAM:
+            from backoffice import valid_email
+            if not valid_email(login):
+                abort(400, "Enter an email address.")
         token = secrets.token_urlsafe(32)
         cursor = p.get_platform_db().execute("""
             insert into web_accounts (account_id,tenant,login,role,customer_id,invite_hash,invite_until)
-            values (?,?,?,?,?,?,?) on conflict do nothing
+            values (?,?,?,?,?,?,?)
+            on conflict(tenant,login,role) do update set invite_hash=excluded.invite_hash,
+                invite_until=excluded.invite_until
+            where web_accounts.password_hash is null and web_accounts.disabled=0
+              and (web_accounts.customer_id is null or web_accounts.customer_id=excluded.customer_id)
         """, (secrets.token_hex(20), tenant, login, role, customer_id, digest(token), stamp(86400)))
         p.get_platform_db().commit()
         if cursor.rowcount != 1:
             abort(409, "An account already exists.")
         invite = url_for("salon.activate", tenant=tenant, token=token)
     accounts = p.platform_query_all(
-        "select account_id, login, role, disabled from web_accounts where tenant=? order by login", (tenant,)
+        """select account_id, login, role, disabled,
+                  case when password_hash is null then 'Awaiting setup' else 'Active' end as setup_status
+           from web_accounts where tenant=? order by login""", (tenant,)
     )
     customers = p.platform_query_all("""
         select customer_public_id,first_name,last_name,email from cloud_customers
@@ -186,8 +206,14 @@ def activate(tenant, token):
         db.commit()
         if cursor.rowcount != 1:
             abort(404)
-        login_endpoint = "salon.customer_login" if row["role"] == "customer" else "salon.login"
-        return redirect(url_for(login_endpoint, tenant=tenant), code=303)
+        if session.get("salon_account") == row["account_id"]:
+            session.clear()
+        if row["role"] != "customer":
+            from backoffice import office_url
+            office = office_url(tenant)
+            if office:
+                return redirect(office, code=303)
+        return redirect(url_for("salon.customer_login" if row["role"] == "customer" else "salon.login", tenant=tenant), code=303)
     return page(salon=salon, mode="activate")
 
 
@@ -211,17 +237,24 @@ def sign_in(tenant, customer_only=False):
         role = "customer" if customer_only else request.form.get("role")
         if role not in ROLES or len(login_name) > 254 or len(password) > 128:
             abort(400)
-        throttle(tenant, f"{role}:{login_name}")
-        row = p.platform_query_one("""
-            select account_id,password_hash from web_accounts
-            where tenant=? and login=? and role=? and disabled=0 and password_hash is not null
-        """, (tenant, login_name, role))
-        if check_password_hash(row["password_hash"] if row else DUMMY_HASH, password) and row:
-            session.clear()
-            session["salon_account"] = row["account_id"]
+        if authenticate(tenant, login_name, role, password):
             return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
         error = "The login details did not match."
     return page(salon=salon, mode="login", error=error, customer_only=customer_only)
+
+
+def authenticate(tenant, login_name, role, password):
+    throttle(tenant, f"{role}:{login_name}")
+    row = p.platform_query_one("""
+        select account_id,password_hash from web_accounts
+        where tenant=? and login=? and role=? and disabled=0 and password_hash is not null
+    """, (tenant, login_name, role))
+    if not check_password_hash(row["password_hash"] if row else DUMMY_HASH, password) or not row:
+        return False
+    session.clear()
+    session["salon_account"] = row["account_id"]
+    session["salon_proof"] = digest(row["password_hash"])
+    return True
 
 
 @bp.get("/salon/<tenant>/")
