@@ -398,6 +398,10 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
     tenant = path.rsplit("/", 1)[-1]
     address = f"/salonmax-ultraviolet{suffix}-backoffice"
     assert address.encode() in admin.get(path).data
+    commissioning_page = admin.get(f"/commissioning/platform/business/{tenant}")
+    assert commissioning_page.status_code == 200
+    assert address.encode() in commissioning_page.data
+    assert b"Salon owner web access" in commissioning_page.data
     with app.app_context():
         assert p.platform_query_one("select login from web_accounts where tenant=? and role='owner'", (tenant,))["login"] == email
         other = "biz_other_" + suffix

@@ -13,6 +13,19 @@
     </div>
 </section>
 
+{% set backoffice = office_url(business.public_id) if office_url is defined else none %}
+{% if backoffice %}
+<section class="panel">
+    <h2>Hosted Back Office</h2>
+    <p class="muted">Share this sign-in address with {{ business.name }}.</p>
+    <p><code>https://www.salonmax.co.uk{{ backoffice }}</code></p>
+    <div class="row">
+        <a class="button" href="{{ backoffice }}">Open hosted back office</a>
+        <a class="button secondary" href="{{ url_for('salon.provision_owner', tenant=business.public_id) }}">Salon owner web access</a>
+    </div>
+</section>
+{% endif %}
+
 <section class="grid two">
     <div class="panel">
         <h2>Terminal Onboarding Pack</h2>
