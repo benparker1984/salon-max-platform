@@ -23,6 +23,21 @@
 {% endif %}
 {% if mode == 'choose' %}
 <form method="get"><label>Salon code<input name="code" required maxlength="100"></label><button>Open salon</button></form>
+{% elif mode == 'customer-access' %}
+<h2>{{ 'Register for online access' if action == 'register' else 'Reset your password' }}</h2>
+{% if submitted %}
+<p>If we can match this email to an eligible account, we will send a private link. If it does not arrive, contact your salon.</p>
+{% elif email_enabled %}
+<p>Enter the email address your salon has on your account.</p>
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+<button>Send me a link</button>
+</form>
+{% else %}
+<p>Ask your salon for a private {{ 'setup' if action == 'register' else 'reset' }} link.</p>
+{% endif %}
+<p><a href="{{ url_for('salon.customer_login', tenant=tenant) }}">Back to sign in</a></p>
 {% elif mode in ('activate','login') %}
 <h2>{{ 'Choose a password' if mode == 'activate' else 'Sign in' }}</h2>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
@@ -35,15 +50,19 @@
 <label>{{ 'Email address' if customer_only else 'Login' }}<input name="login" autocomplete="username" required maxlength="254"></label>
 {% endif %}
 <label>Password<input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'activate' else 'current-password' }}" {% if mode == 'activate' %}minlength="12"{% endif %} maxlength="128" required></label>
-<button>{{ 'Activate account' if mode == 'activate' else 'Sign in' }}</button>
+<button>{{ 'Save password' if mode == 'activate' else 'Sign in' }}</button>
 </form>
+{% if mode == 'login' and customer_only %}
+<p><a href="{{ url_for('salon.customer_access', tenant=tenant, action='register') }}">Register for online access</a></p>
+<p><a href="{{ url_for('salon.customer_access', tenant=tenant, action='reset') }}">Forgot your password?</a></p>
+{% endif %}
 {% elif mode == 'dashboard' %}
 {% if account.role == 'customer' %}
 <h2>Your minutes</h2><p>{{ minutes }} available</p>
 <a href="{{ url_for('marketing.preferences', tenant=tenant) }}">Marketing preferences</a>
 {% if request.args.get('checkout') == 'returned' %}<p>Payment confirmation may take a moment. Refresh to check your minutes.</p>{% endif %}
 {% if checkout_enabled and offers %}
-<h2>Buy minutes</h2>
+<h2>Top up your minutes</h2>
 {% for offer in offers %}
 <form method="post" action="{{ url_for('checkout.buy', tenant=tenant) }}">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="offer_id" value="{{ offer.offer_id }}">
@@ -51,6 +70,23 @@
 </form>
 {% endfor %}
 {% endif %}
+{% if not (checkout_enabled and offers) %}<p>Ask your salon to top up your minutes.</p>{% endif %}
+<h2>Tanning history</h2>
+{% if sessions %}
+<ul>{% for visit in sessions %}
+<li>{{ visit.date }}{% if visit.minutes %} &middot; {{ visit.minutes }} minutes{% endif %}</li>
+{% endfor %}</ul>
+{% else %}<p>No tanning sessions have synced yet.</p>{% endif %}
+<h2>Minute activity</h2>
+{% if history %}
+{% set activity = {'web_purchase': 'Online top-up', 'minutes_purchased': 'Package purchase',
+    'minutes_used': 'Tanning session', 'manual_credit': 'Salon credit', 'manual_debit': 'Salon adjustment',
+    'refund_credit': 'Refund', 'reversal_debit': 'Reversal'} %}
+<ul>{% for entry in history %}
+<li>{{ entry.created_at }} &middot; {{ activity.get(entry.entry_type, 'Account activity') }} &middot;
+{{ '%+d'|format(entry.delta_minutes) }} min ({{ entry.minutes_after }} left)</li>
+{% endfor %}</ul>
+{% else %}<p>No minute activity yet.</p>{% endif %}
 {% else %}
 <h2>Salon workspace</h2>
 {% if office_url(tenant) %}<p><a href="{{ office_url(tenant) }}">Open your back office</a></p>{% endif %}

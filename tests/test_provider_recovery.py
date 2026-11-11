@@ -535,3 +535,44 @@ def test_pi_backoffice_links_stay_with_paired_terminal(platform, tenant):
     assert b"TX-VERIFY" in transactions and b"GBP 12.50" in transactions
     assert b"Verification" in browser.get(f"/{slug}/customers?q=verification").data
     assert b"No records yet." in browser.get(f"/{slug}/customers?q=not-a-customer").data
+
+
+def test_customer_claim_and_tanning_history(platform, tenant, monkeypatch):
+    import contextlib
+    import json
+    import re
+    import salon_web
+
+    app, p = platform
+    business, _, terminal, headers = tenant
+    email = "customer@example.invalid"
+    for customer_id, minutes in ((123, 17), (456, 29)):
+        payload = sale(terminal, event_id=f"visit-{customer_id}", customer_id=customer_id)
+        payload["events"][0]["payload"].update(
+            transaction_type="tanning_sale", minutes=minutes,
+            customer_email=email if customer_id == 123 else "other@example.invalid",
+        )
+        assert app.test_client().post("/v1/sync/events/push", json=payload, headers=headers).status_code == 200
+
+    emails = []
+    def record_email(request, timeout):
+        emails.append(json.loads(request.data))
+        return contextlib.nullcontext()
+
+    monkeypatch.setenv("SALONMAX_TRANSACTIONAL_EMAIL_KEY", "test-key")
+    monkeypatch.setenv("SALONMAX_TRANSACTIONAL_EMAIL_FROM", "salon@example.invalid")
+    monkeypatch.setattr(salon_web, "urlopen", record_email)
+    browser = app.test_client()
+    login = f"/salon/{business}/customer"
+    browser.get(login)
+    with browser.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    assert browser.post(login + "/register", data={"csrf": csrf, "email": email}).status_code == 200
+    assert len(emails) == 1 and emails[0]["to"] == [email]
+    link = re.search(r"/salon/[^/]+/activate/[A-Za-z0-9_-]+", emails[0]["text"]).group()
+    password = "Customer test password"
+    assert browser.post(link, data={"csrf": csrf, "password": password}).status_code == 303
+    assert browser.post(link, data={"csrf": csrf, "password": password}).status_code == 404
+    result = browser.post(login, data={"csrf": csrf, "login": email, "password": password}, follow_redirects=True)
+    assert b"17 minutes" in result.data
+    assert b"29 minutes" not in result.data

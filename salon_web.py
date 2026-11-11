@@ -1,8 +1,12 @@
 """Hosted salon and customer access."""
 import hashlib
 import hmac
+import json
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from flask import Blueprint, abort, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -198,11 +202,16 @@ def activate(tenant, token):
         abort(404)
     hashed = digest(token)
     row = p.platform_query_one("""
-        select account_id,role,login,password_hash from web_accounts
+        select account_id,role,login,password_hash,customer_id from web_accounts
         where tenant=? and invite_hash=? and invite_until>? and disabled=0
     """, (tenant, hashed, stamp()))
     if not row:
         abort(404, "This setup link is invalid or expired. Ask for a new link.")
+    if row["role"] == "customer" and not p.platform_query_one("""
+        select 1 from cloud_customers where business_account_public_id=? and customer_public_id=?
+        and status='active' and lower(trim(email))=?
+    """, (tenant, row["customer_id"], row["login"])):
+        abort(404, "Ask your salon for a new setup link.")
     team_office = None
     if row["role"] in TEAM:
         from backoffice import office_url, recovery_code, recovery_page, team_activation_page
@@ -230,7 +239,70 @@ def activate(tenant, token):
         if code:
             return recovery_page(salon, code)
         return redirect(url_for("salon.customer_login" if row["role"] == "customer" else "salon.login", tenant=tenant), code=303)
-    return page(salon=salon, mode="activate")
+    return page(salon=salon, mode="activate", customer_only=row["role"] == "customer")
+
+
+def customer_email_enabled():
+    return bool(os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_KEY")
+                and os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_FROM"))
+
+
+@bp.route("/salon/<tenant>/customer/<any(register,reset):action>", methods=["GET", "POST"])
+def customer_access(tenant, action):
+    from backoffice import ORIGIN, valid_email
+
+    salon = tenant_record(tenant)
+    enabled = customer_email_enabled()
+    submitted = False
+    if request.method == "POST":
+        verify_csrf()
+        email = request.form.get("email", "").strip().lower()
+        if not valid_email(email):
+            abort(400)
+        if not enabled:
+            abort(503, "Ask your salon for a private setup or reset link.")
+        throttle(tenant, f"customer-access:{email}")
+        customers = p.platform_query_all("""
+            select customer_public_id from cloud_customers
+            where business_account_public_id=? and status='active' and lower(trim(email))=?
+            limit 2
+        """, (tenant, email))
+        if len(customers) == 1:
+            customer_id = customers[0]["customer_public_id"]
+            db = p.get_platform_db()
+            if action == "register":
+                db.execute("""
+                    insert into web_accounts (account_id,tenant,login,role,customer_id)
+                    values (?,?,?,'customer',?) on conflict do nothing
+                """, (secrets.token_hex(20), tenant, email, customer_id))
+            token = secrets.token_urlsafe(32)
+            password_state = "is null" if action == "register" else "is not null"
+            changed = db.execute(f"""
+                update web_accounts set invite_hash=?, invite_until=?
+                where tenant=? and login=? and role='customer' and customer_id=?
+                  and disabled=0 and password_hash {password_state}
+            """, (digest(token), stamp(1800), tenant, email, customer_id)).rowcount
+            db.commit()
+            if changed:
+                link = ORIGIN + url_for("salon.activate", tenant=tenant, token=token)
+                message = {
+                    "from": os.environ["SALONMAX_TRANSACTIONAL_EMAIL_FROM"],
+                    "to": [email],
+                    "subject": f"{salon['business_name']} customer account",
+                    "text": f"Choose your account password: {link}\n\nThis link expires in 30 minutes.",
+                }
+                email_request = Request(
+                    "https://api.resend.com/emails", json.dumps(message).encode(),
+                    {"Authorization": "Bearer " + os.environ["SALONMAX_TRANSACTIONAL_EMAIL_KEY"],
+                     "Content-Type": "application/json"},
+                )
+                try:
+                    with urlopen(email_request, timeout=8):
+                        pass
+                except (URLError, TimeoutError):
+                    p.app.logger.warning("Customer account email delivery failed")
+        submitted = True
+    return page(salon=salon, mode="customer-access", action=action, email_enabled=enabled, submitted=submitted)
 
 
 @bp.route("/salon/<tenant>/login", methods=["GET", "POST"])
@@ -285,6 +357,8 @@ def dashboard(tenant):
         if address:
             return redirect(address)
     minutes = None
+    history = []
+    sessions = []
     if account["role"] == "customer":
         row = p.platform_query_one("""
             select m.minutes_available from cloud_customers c left join cloud_customer_minute_summary m
@@ -294,10 +368,51 @@ def dashboard(tenant):
         if not row:
             abort(403)
         minutes = row["minutes_available"] or 0
+        customer_id = account["customer_id"]
+        history = p.platform_query_all("""
+            select created_at, entry_type, delta_minutes, minutes_after
+            from cloud_customer_minute_ledger where business_account_public_id=? and customer_public_id=?
+            order by created_at desc,id desc limit 50
+        """, (tenant, customer_id))
+        sessions = tanning_history(tenant, customer_id)
     from checkout import configured, offers
-    return page(salon=salon, mode="dashboard", account=account, minutes=minutes,
+    return page(salon=salon, mode="dashboard", account=account, minutes=minutes, history=history, sessions=sessions,
                 offers=offers(tenant) if minutes is not None else [],
                 checkout_enabled=minutes is not None and configured(tenant))
+
+
+def tanning_history(tenant, customer_id):
+    from storage import postgres
+
+    if postgres():
+        kind = "payload_json::jsonb ->> 'transaction_type'"
+        local_id = "payload_json::jsonb ->> 'customer_id'"
+        normalise = f"trim(both '-' from regexp_replace(lower(trim({local_id})), '[^a-z0-9]+', '-', 'g'))"
+        prefix = p.make_cloud_customer_public_id(tenant, "x")[:-1]
+        events = p.platform_query_all(f"""
+            select occurred_at, payload_json from cloud_sync_events
+            where business_account_public_id=? and event_type='transaction.completed'
+              and {kind}='tanning_sale'
+              and ? || coalesce(nullif({normalise}, ''), 'customer')=?
+              and nullif(trim({local_id}), '') is not null
+            order by occurred_at desc,id desc limit 50
+        """, (tenant, prefix, customer_id))
+    else:
+        events = p.platform_query_all("""
+            select occurred_at,payload_json from cloud_sync_events
+            where business_account_public_id=? and event_type='transaction.completed'
+              and json_extract(payload_json,'$.transaction_type')='tanning_sale'
+            order by occurred_at desc,id desc
+        """, (tenant,))
+    sessions = []
+    for event in events:
+        payload = json.loads(event["payload_json"])
+        local_customer_id = payload.get("customer_id")
+        if local_customer_id and p.make_cloud_customer_public_id(tenant, local_customer_id) == customer_id:
+            sessions.append({"date": event["occurred_at"], "minutes": payload.get("minutes")})
+            if len(sessions) == 50:
+                break
+    return sessions
 
 
 @bp.post("/salon/<tenant>/logout")
