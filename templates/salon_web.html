@@ -200,7 +200,7 @@
 <label>Existing salon account<select name="customer_id" required><option value="">Choose an account</option>
 {% for customer in customers %}<option value="{{ customer.customer_public_id }}">{{ customer.first_name }} {{ customer.last_name }} ({{ customer.account_number or customer.customer_number or customer.email }})</option>{% endfor %}
 </select></label>
-<label><input type="checkbox" name="verified" value="yes" required> I verified the customer's identity and confirmed that they control the email above.</label>
+<label><input type="checkbox" class="checkbox" name="verified" value="yes" required> I verified the customer's identity and confirmed that they control the email above.</label>
 <button>Link account and existing minutes</button>
 </form>
 {% else %}<p>No requests waiting.</p>{% endfor %}
