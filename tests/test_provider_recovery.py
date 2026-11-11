@@ -576,3 +576,36 @@ def test_customer_claim_and_tanning_history(platform, tenant, monkeypatch):
     result = browser.post(login, data={"csrf": csrf, "login": email, "password": password}, follow_redirects=True)
     assert b"17 minutes" in result.data
     assert b"29 minutes" not in result.data
+
+
+def test_salon_issues_customer_code_for_existing_account(platform, tenant):
+    import re
+
+    app, p = platform
+    business, _, terminal, headers = tenant
+    assert app.test_client().post("/v1/sync/events/push", json=sale(terminal), headers=headers).status_code == 200
+    customer_id = p.make_cloud_customer_public_id(business, 123)
+    with app.app_context():
+        p.platform_execute("update cloud_customers set email='' where customer_public_id=?", (customer_id,))
+    admin = owner_client(app)
+    manage = f"/platform/business/{business}/customer-access"
+    assert admin.get(manage).status_code == 200
+    with admin.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    email = "linked@example.invalid"
+    response = admin.post(manage, data={"csrf": csrf, "role": "customer", "customer_id": customer_id, "login": email})
+    assert response.status_code == 200
+    code = re.search(rb'One-time setup code<input readonly value="([^"]+)"', response.data)[1].decode()
+    browser = app.test_client()
+    register = f"/salon/{business}/customer/register"
+    browser.get(register)
+    with browser.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    response = browser.post(register, data={"csrf": csrf, "setup_code": code})
+    assert response.status_code == 303
+    assert browser.post(response.location, data={"csrf": csrf, "password": "New linked password"}).status_code == 303
+    assert browser.post(register, data={"csrf": csrf, "setup_code": code}).status_code == 404
+    result = browser.post(register.rsplit("/", 1)[0], data={
+        "csrf": csrf, "login": email, "password": "New linked password",
+    }, follow_redirects=True)
+    assert b"30 available" in result.data

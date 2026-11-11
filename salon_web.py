@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from urllib.error import URLError
@@ -120,6 +121,13 @@ def provision_owner(tenant):
     return manage(salon, {"owner"}, "salon.provision_owner")
 
 
+@bp.route("/platform/business/<tenant>/customer-access", methods=["GET", "POST"])
+def provision_customers(tenant):
+    if not (session.get("platform_admin_authenticated") or session.get("salonmax_platform_authed")):
+        abort(403)
+    return manage(tenant_record(tenant), {"customer"}, "salon.provision_customers")
+
+
 @bp.route("/salon/<tenant>/access", methods=["GET", "POST"])
 def provision_team(tenant):
     salon = tenant_record(tenant)
@@ -129,6 +137,8 @@ def provision_team(tenant):
 
 
 def manage(salon, roles, endpoint, team_account=None):
+    from backoffice import valid_email
+
     tenant = salon["business_account_public_id"]
     invite = None
     if request.method == "POST":
@@ -161,23 +171,34 @@ def manage(salon, roles, endpoint, team_account=None):
             )
             if not customer:
                 abort(404)
-            customer_id, login = customer["customer_public_id"], customer["email"].strip().lower()
+            customer_id = customer["customer_public_id"]
+            login = customer["email"].strip().lower() or login
         if not login or len(login) > 254 or any(char.isspace() for char in login):
             abort(400, "Enter a valid login.")
-        if role in TEAM:
-            from backoffice import valid_email
-            if not valid_email(login):
-                abort(400, "Enter an email address.")
+        if not valid_email(login):
+            abort(400, "Enter a valid email address for this account.")
         token = secrets.token_urlsafe(32)
-        cursor = p.get_platform_db().execute("""
-            insert into web_accounts (account_id,tenant,login,role,customer_id,invite_hash,invite_until)
-            values (?,?,?,?,?,?,?)
-            on conflict(tenant,login,role) do update set invite_hash=excluded.invite_hash,
-                invite_until=excluded.invite_until
-            where web_accounts.password_hash is null and web_accounts.disabled=0
-              and (web_accounts.customer_id is null or web_accounts.customer_id=excluded.customer_id)
-        """, (secrets.token_hex(20), tenant, login, role, customer_id, digest(token), stamp(86400)))
-        p.get_platform_db().commit()
+        db = p.get_platform_db()
+        if role == "customer":
+            db.execute("""
+                insert into web_accounts (account_id,tenant,login,role,customer_id)
+                values (?,?,?,'customer',?) on conflict do nothing
+            """, (secrets.token_hex(20), tenant, login, customer_id))
+            cursor = db.execute("""
+                update web_accounts set invite_hash=?,invite_until=?
+                where tenant=? and customer_id=? and login=? and role='customer'
+                  and password_hash is null and disabled=0
+            """, (digest(token), stamp(86400), tenant, customer_id, login))
+        else:
+            cursor = db.execute("""
+                insert into web_accounts (account_id,tenant,login,role,customer_id,invite_hash,invite_until)
+                values (?,?,?,?,?,?,?)
+                on conflict(tenant,login,role) do update set invite_hash=excluded.invite_hash,
+                    invite_until=excluded.invite_until
+                where web_accounts.password_hash is null and web_accounts.disabled=0
+                  and (web_accounts.customer_id is null or web_accounts.customer_id=excluded.customer_id)
+            """, (secrets.token_hex(20), tenant, login, role, customer_id, digest(token), stamp(86400)))
+        db.commit()
         if cursor.rowcount != 1:
             abort(409, "An account already exists.")
         invite = url_for("salon.activate", tenant=tenant, token=token)
@@ -187,8 +208,8 @@ def manage(salon, roles, endpoint, team_account=None):
            from web_accounts where tenant=? order by login""", (tenant,)
     )
     customers = p.platform_query_all("""
-        select customer_public_id,first_name,last_name,email from cloud_customers
-        where business_account_public_id=? and status='active' and email<>'' order by last_name, first_name
+        select customer_public_id,first_name,last_name,email,account_number,customer_number from cloud_customers
+        where business_account_public_id=? and status='active' order by last_name, first_name
     """, (tenant,)) if "customer" in roles else []
     return page(salon=salon, mode="manage", roles=sorted(roles), customers=customers, invite=invite,
                 team_account=team_account,
@@ -209,7 +230,7 @@ def activate(tenant, token):
         abort(404, "This setup link is invalid or expired. Ask for a new link.")
     if row["role"] == "customer" and not p.platform_query_one("""
         select 1 from cloud_customers where business_account_public_id=? and customer_public_id=?
-        and status='active' and lower(trim(email))=?
+        and status='active' and (trim(email)='' or lower(trim(email))=?)
     """, (tenant, row["customer_id"], row["login"])):
         abort(404, "Ask your salon for a new setup link.")
     team_office = None
@@ -256,6 +277,16 @@ def customer_access(tenant, action):
     submitted = False
     if request.method == "POST":
         verify_csrf()
+        setup_code = request.form.get("setup_code", "").strip()
+        if action == "register" and setup_code:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{43}", setup_code):
+                abort(400, "Enter the setup code your salon gave you.")
+            if not p.platform_query_one("""
+                select 1 from web_accounts where tenant=? and role='customer' and disabled=0
+                and password_hash is null and invite_hash=? and invite_until>?
+            """, (tenant, digest(setup_code), stamp())):
+                abort(404, "This setup code is invalid or expired. Ask your salon for a new code.")
+            return redirect(url_for("salon.activate", tenant=tenant, token=setup_code), code=303)
         email = request.form.get("email", "").strip().lower()
         if not valid_email(email):
             abort(400)

@@ -35,7 +35,14 @@
 <button>Send me a link</button>
 </form>
 {% else %}
-<p>Ask your salon for a private {{ 'setup' if action == 'register' else 'reset' }} link.</p>
+<p>Ask your salon for a private {{ 'setup code or link' if action == 'register' else 'reset link' }}.</p>
+{% endif %}
+{% if action == 'register' %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Setup code from your salon<input name="setup_code" required maxlength="43" autocomplete="off"></label>
+<button>Use setup code</button>
+</form>
 {% endif %}
 <p><a href="{{ url_for('salon.customer_login', tenant=tenant) }}">Back to sign in</a></p>
 {% elif mode in ('activate','login') %}
@@ -149,13 +156,15 @@
 {% if invite %}
 <p><a href="{{ invite }}" target="_blank" rel="noopener noreferrer">Open password setup link</a></p>
 <label>One-time link to share privately<input readonly aria-label="Activation link" value="https://www.salonmax.co.uk{{ invite }}"></label>
+{% if 'customer' in roles and request.form.get('role') == 'customer' %}<label>One-time setup code<input readonly value="{{ invite.rsplit('/', 1)[1] }}"></label>{% endif %}
 {% endif %}
 {% for role in roles %}
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="role" value="{{ role }}">
 {% if role == 'customer' %}
-<label>Customer<select name="customer_id" required><option value="">Choose a customer</option>{% for customer in customers %}<option value="{{ customer.customer_public_id }}">{{ customer.first_name }} {{ customer.last_name }} ({{ customer.email }})</option>{% endfor %}</select></label>
+<label>Customer<select name="customer_id" required><option value="">Choose a customer</option>{% for customer in customers %}<option value="{{ customer.customer_public_id }}">{{ customer.first_name }} {{ customer.last_name }} {% if customer.account_number %} (Account {{ customer.account_number }}){% elif customer.customer_number %} (Customer {{ customer.customer_number }}){% endif %}{% if customer.email %} &middot; {{ customer.email }}{% endif %}</option>{% endfor %}</select></label>
+<label>Email if the customer record has none<input name="login" type="email" maxlength="254"></label>
 {% else %}<label>{{ role|capitalize }} email<input name="login" type="email" required maxlength="254"></label>{% endif %}
 <button>Create {{ role }} invite</button>
 </form>
