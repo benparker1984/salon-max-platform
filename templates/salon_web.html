@@ -46,7 +46,7 @@
 <p>Already a customer? Ask the salon to link your existing minutes and visit history.</p>
 <form method="post" action="{{ url_for('salon.request_customer_link', tenant=tenant) }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<label>Old salon account number (optional)<input name="account_number" maxlength="80"></label>
+<label>Salon account number<input name="account_number" maxlength="80" required></label>
 <button>Link my old salon account</button>
 </form>
 {% endif %}

@@ -51,6 +51,12 @@ def init_schema():
             linked_at text,
             primary key (tenant,account_id)
         );
+        create table if not exists web_customer_pairings (
+            tenant text not null,
+            account_number text not null,
+            account_id text not null,
+            primary key (tenant,account_number)
+        );
         create table if not exists web_login_attempts (
             attempt_key text primary key,
             expires text not null,
@@ -255,6 +261,29 @@ def link_customer_record(tenant):
         db.rollback()
         flash("This link request is no longer pending.", "customer-link")
         return
+    profile = db.execute("""
+        select old_account_number from web_customer_profiles where tenant=? and account_id=?
+    """, (tenant, account_id)).fetchone()
+    number = profile["old_account_number"].strip().lower()
+    if number:
+        matching = db.execute("""
+            select customer_public_id from cloud_customers
+            where business_account_public_id=? and status='active'
+              and lower(coalesce(nullif(trim(account_number),''),trim(customer_number)))=?
+            limit 2
+        """, (tenant, number)).fetchall()
+        if len(matching) != 1 or matching[0]["customer_public_id"] != customer_id:
+            db.rollback()
+            flash("Choose the unique salon record that matches the requested account number.", "customer-link")
+            return
+        pairing = db.execute("""
+            insert into web_customer_pairings (tenant,account_number,account_id)
+            values (?,?,?) on conflict do nothing
+        """, (tenant, number, account_id))
+        if pairing.rowcount != 1:
+            db.rollback()
+            flash("This account number has already been paired.", "customer-link")
+            return
     updated = db.execute("""
         update web_accounts set customer_id=?, invite_hash=null, invite_until=null
         where tenant=? and account_id=? and role='customer' and disabled=0 and password_hash is not null
@@ -323,8 +352,8 @@ def request_customer_link(tenant):
     account = member(tenant, {"customer"})
     verify_csrf()
     old_number = request.form.get("account_number", "").strip()
-    if len(old_number) > 80:
-        abort(400)
+    if not old_number or len(old_number) > 80:
+        abort(400, "Enter the account number your salon gave you.")
     p.platform_execute("""
         update web_customer_profiles set old_account_number=?, requested_at=?
         where tenant=? and account_id=? and requested_at is null and linked_at is null
