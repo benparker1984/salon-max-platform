@@ -1,5 +1,6 @@
 """Tenant-scoped hosted back office and password recovery."""
 import json
+import ipaddress
 import os
 import re
 import secrets
@@ -27,6 +28,15 @@ CATALOG = {
     "pricing": ("Price name", "Price in pence"),
     "store": ("Product name", "Stock units"),
 }
+PI_PAGES = {
+    "dashboard": "/", "settings": "/business-settings", "sunbeds": "/sunbed-settings",
+    "customers": "/customers", "staff": "/staff", "pricing": "/pricing",
+    "packages": "/packages", "store": "/store", "transactions": "/transactions",
+    "tills": "/till-sessions", "reports": "/reports",
+}
+PRIVATE_NETWORKS = tuple(ipaddress.ip_network(network) for network in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
+))
 
 
 def init_schema():
@@ -45,6 +55,11 @@ def init_schema():
         create table if not exists web_account_recovery (
             account_id text primary key,
             code_hash text not null
+        );
+        create table if not exists web_pi_backoffices (
+            terminal_id text primary key,
+            tenant text not null,
+            origin text not null unique
         );
     """)
     db.commit()
@@ -90,6 +105,74 @@ def backfill():
 def office_url(tenant):
     row = p.platform_query_one("select slug from web_backoffices where tenant=?", (tenant,))
     return url_for("backoffice.workspace", slug=row["slug"]) if row else None
+
+
+def paired_tills(tenant):
+    return p.platform_query_all("""
+        select t.terminal_device_public_id as terminal_id,t.terminal_name,s.site_name,
+               t.last_seen_at,w.origin
+        from cloud_terminal_registry t
+        join cloud_business_sites s on s.site_public_id=t.site_public_id
+            and s.business_account_public_id=t.business_account_public_id
+        join cloud_device_licences l on l.terminal_device_public_id=t.terminal_device_public_id
+            and l.business_account_public_id=t.business_account_public_id
+        left join web_pi_backoffices w on w.terminal_id=t.terminal_device_public_id
+            and w.tenant=t.business_account_public_id
+        where t.business_account_public_id=? and l.licence_status='active'
+          and t.status not in ('retired','suspended','deleted')
+          and t.management_status not in ('retired','suspended')
+          and s.status not in ('suspended','deleted')
+        order by s.site_name,t.terminal_name
+    """, (tenant,))
+
+
+def private_pi_origin(value):
+    try:
+        url = urlsplit(value)
+        address = ipaddress.IPv4Address(url.hostname or "")
+        port = url.port
+    except ValueError:
+        return None
+    if (url.scheme not in {"http", "https"} or url.username is not None or url.password is not None
+            or url.path not in {"", "/"} or url.query or url.fragment or not port
+            or not any(address in network for network in PRIVATE_NETWORKS)):
+        return None
+    return f"{url.scheme}://{address}:{port}"
+
+
+@bp.route("/platform/business/<tenant>/pi-back-office", methods=["GET", "POST"])
+def manage_pi_links(tenant):
+    if not (session.get("platform_admin_authenticated") or session.get("salonmax_platform_authed")):
+        abort(403)
+    salon = web.tenant_record(tenant)
+    tills = paired_tills(tenant)
+    if request.method == "POST":
+        web.verify_csrf()
+        terminal = request.form.get("terminal_id", "")
+        if terminal not in {row["terminal_id"] for row in tills}:
+            abort(404)
+        value = request.form.get("origin", "").strip()
+        if not value:
+            p.platform_execute("delete from web_pi_backoffices where tenant=? and terminal_id=?", (tenant, terminal))
+        else:
+            origin = private_pi_origin(value)
+            if not origin:
+                abort(400, "Enter the Pi’s private IP address and port, such as http://100.64.0.10:5001.")
+            db = p.get_platform_db()
+            # Conflicting addresses and reassigned terminal IDs must never overwrite another salon's mapping.
+            db.execute("""
+                insert into web_pi_backoffices (terminal_id,tenant,origin) values (?,?,?)
+                on conflict do nothing
+            """, (terminal, tenant, origin))
+            saved = db.execute("""
+                select origin from web_pi_backoffices where tenant=? and terminal_id=?
+            """, (tenant, terminal)).fetchone()
+            if not saved or saved["origin"] != origin:
+                db.rollback()
+                abort(409, "This terminal or address is already linked. Remove the old link first.")
+            db.commit()
+        return redirect(url_for("backoffice.manage_pi_links", tenant=tenant), code=303)
+    return render(salon, "", "pi-links", tills=tills)
 
 
 def recovery_code(db, account_id):
@@ -184,6 +267,9 @@ def workspace(slug, section):
         """, (tenant,))
         return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in" if owner else "register"))
     account = web.member(tenant, web.TEAM)
+    pi_links = []
+    if account["role"] == "owner":
+        pi_links = [row for row in paired_tills(tenant) if row["origin"]]
     if section in {"staff", "packages"}:
         endpoint = "salon.provision_team" if section == "staff" else "checkout.manage"
         return redirect(url_for(endpoint, tenant=tenant))
@@ -235,6 +321,16 @@ def workspace(slug, section):
         """, (tenant, section))
     rows = [list(row.values()) if isinstance(row, dict) else list(row) for row in records]
     metrics = {}
+    sites, staff = [], []
+    if section == "dashboard":
+        sites = p.platform_query_all("""
+            select site_name,site_code,status from cloud_business_sites
+            where business_account_public_id=? and status<>'deleted' order by site_name
+        """, (tenant,))
+        staff = p.platform_query_all("""
+            select login,role from web_accounts where tenant=? and role in ('owner','staff')
+              and disabled=0 and password_hash is not null order by role,login
+        """, (tenant,)) if account["role"] == "owner" else []
     if section in {"dashboard", "reports"}:
         for label, table in [("Customers", "cloud_customers"), ("Sites", "cloud_business_sites"),
                              ("Devices", "cloud_terminal_registry"), ("Online packages", "web_offers")]:
@@ -243,7 +339,8 @@ def workspace(slug, section):
         sales = records if section == "reports" else transactions(tenant)
         metrics["Recent till sales"] = "£" + format(sum((row[3] for row in sales), Decimal(0)), ",.2f")
     return render(salon, slug, "workspace", section=section, account=account, rows=rows, columns=columns,
-                  metrics=metrics, catalog=CATALOG.get(section))
+                  metrics=metrics, catalog=CATALOG.get(section), pi_links=pi_links, pi_pages=PI_PAGES,
+                  sites=sites, staff=staff)
 
 
 def transactions(tenant):

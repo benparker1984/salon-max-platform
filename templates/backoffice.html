@@ -69,6 +69,21 @@
 </form>
 <a href="{{ url_for('backoffice.workspace', slug=slug, section='sign-in') }}">Back to sign in</a>
 </section>
+{% elif mode == "pi-links" %}
+<section class="panel">
+<h2>Paired Pi back offices</h2>
+<p>Match the private address to the terminal ID shown in your pairing records. Salon owners can open these pages when connected to the Pi’s private network.</p>
+{% for till in tills %}
+<form method="post" class="catalog">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="terminal_id" value="{{ till.terminal_id }}">
+<div><strong>{{ till.terminal_name }}</strong><br>{{ till.site_name }} · {{ till.terminal_id }}<br>Last seen {{ till.last_seen_at or 'not yet' }}</div>
+<label>Private Pi address<input name="origin" type="url" maxlength="128" value="{{ till.origin or '' }}" placeholder="http://100.64.0.10:5001"></label>
+<button>Save link</button>
+</form>
+{% else %}<p>Pair and license a till for this salon before linking its back office.</p>{% endfor %}
+<a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=salon.business_account_public_id) }}">Back to business record</a>
+</section>
 {% else %}
 <nav class="panel" aria-label="Back office">
 {% for key, title in sections.items() %}
@@ -131,5 +146,38 @@
 {% endfor %}
 {% endif %}
 </section>
+{% if section == 'dashboard' %}
+<div class="dashboard-grid">
+<section class="panel">
+<h2>Sites</h2>
+<div class="table"><table><thead><tr><th scope="col">Site</th><th scope="col">Code</th><th scope="col">Status</th></tr></thead>
+<tbody>{% for site in sites %}<tr><td>{{ site.site_name }}</td><td>{{ site.site_code }}</td><td>{{ site.status|title }}</td></tr>
+{% else %}<tr><td colspan="3">No sites yet.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% if account.role == 'owner' %}
+<section class="panel">
+<h2>Back office accounts</h2>
+{% for member in staff %}<p><strong>{{ member.login }}</strong><br>{{ member.role|title }}</p>{% else %}<p>No active accounts.</p>{% endfor %}
+</section>
+{% endif %}
+</div>
+{% endif %}
+{% if pi_links %}
+<section class="panel">
+<h2>Paired Pi back office</h2>
+{% for till in pi_links %}
+<h3>{{ till.site_name }} · {{ till.terminal_name }}</h3>
+<nav class="pi-pages" aria-label="{{ till.terminal_name }} back office pages">
+{% if section == 'dashboard' %}
+{% for key, path in pi_pages.items() %}
+<a href="{{ till.origin }}{{ path }}" target="_blank" rel="noopener noreferrer">{{ sections[key] }}</a>
+{% endfor %}
+{% else %}
+<a href="{{ till.origin }}{{ pi_pages[section] }}" target="_blank" rel="noopener noreferrer">Open {{ sections[section] }} on this Pi</a>
+{% endif %}
+</nav>
+{% endfor %}
+</section>
+{% endif %}
 {% endif %}
 </main></body></html>

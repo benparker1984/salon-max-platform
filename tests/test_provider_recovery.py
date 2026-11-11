@@ -483,3 +483,39 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
     assert resetter.post(address + "/sign-in", data={
         "csrf": csrf, "email": email, "role": "owner", "password": "Second valid password"
     }).status_code == 303
+
+
+def test_pi_backoffice_links_stay_with_paired_terminal(platform, tenant):
+    import backoffice
+
+    app, p = platform
+    business, _, terminal, _ = tenant
+    with app.app_context():
+        slug = backoffice.setup(business, "Linked salon")
+        account = uuid.uuid4().hex
+        p.platform_execute("insert into web_accounts (account_id,tenant,login,role) values (?,?,?,'owner')",
+                           (account, business, "link@example.invalid"))
+    path = f"/platform/business/{business}/pi-back-office"
+    browser = app.test_client()
+    with browser.session_transaction() as state:
+        state["salon_account"] = account
+    assert browser.get(path).status_code == 302
+    admin = owner_client(app)
+    assert terminal.encode() in admin.get(path).data
+    with admin.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    assert admin.post(path, data={"csrf": csrf, "terminal_id": "another-tenant",
+                                  "origin": "http://100.64.20.31:5001"}).status_code == 404
+    assert admin.post(path, data={"csrf": csrf, "terminal_id": terminal,
+                                  "origin": "https://example.invalid:5001"}).status_code == 400
+    assert admin.post(path, data={"csrf": csrf, "terminal_id": terminal,
+                                  "origin": "http://100.64.20.31:5001"}).status_code == 303
+    result = browser.get(f"/{slug}")
+    assert result.status_code == 200
+    assert b"http://100.64.20.31:5001/business-settings" in result.data
+    assert b"http://100.64.20.31:5001/till-sessions" in result.data
+    assert b"http://100.64.20.31:5001/store" in result.data
+    with app.app_context():
+        p.platform_execute("update cloud_terminal_registry set management_status='suspended' where terminal_device_public_id=?",
+                           (terminal,))
+    assert b"http://100.64.20.31:5001/" not in browser.get(f"/{slug}").data

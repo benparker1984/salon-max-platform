@@ -68,7 +68,7 @@ used for the sealed restore, and an arbitrary test `SALONMAX_SECRET_KEY`, instal
 Before deploying, validate recovery idempotence, protected routes, all console
 screens, duplicate/concurrent sync delivery, rollback, tenant boundaries, imports,
 corrections, media and export. After deploying, check `/healthz` for
-`release=salon-web-v5` and `recovery_applied=true`, then verify authenticated
+`release=salon-web-v6` and `recovery_applied=true`, then verify authenticated
 pages and the public /salon/ portal.
 
 ## Hosted salon portal
@@ -86,7 +86,11 @@ provider console lists the login email and setup status.
 The hosted back office shows synced customers, recent till transactions and
 device check-ins, and links to staff access, online packages and marketing.
 Sunbed, pricing and store records managed here are hosted records. Hardware
-settings, local inventory, and till sessions are still managed on the till.
+settings, local inventory, and till sessions are managed on the till. On the
+platform business record, select **Link paired Pi back office** and save the
+verified private address beside its licensed terminal. The salon owner can
+then open the original Pi pages from the hosted dashboard while connected to
+the Pi's private network.
 
 Set `SALONMAX_TRANSACTIONAL_EMAIL_KEY` to a Resend API key and
 `SALONMAX_TRANSACTIONAL_EMAIL_FROM` to a verified sending address to enable

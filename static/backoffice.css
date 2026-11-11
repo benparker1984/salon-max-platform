@@ -1,7 +1,7 @@
-:root { font-family: system-ui, sans-serif; color: #183043; background: #e9f0f3; }
-body { margin: 0; }
-main { max-width: 72rem; margin: 2rem auto; padding: 0 1rem; }
-.panel { background: #fff; border-radius: 1rem; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 4px 18px #18304310; }
+:root { font-family: "Segoe UI", Arial, sans-serif; color: #1f2937; background: #f7f4ef; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, #dbeafe 0, transparent 30%), radial-gradient(circle at bottom right, #fde68a 0, transparent 25%); }
+main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+.panel { background: #fff; border-radius: 18px; padding: 20px; margin-bottom: 18px; box-shadow: 0 8px 24px #00000014; }
 header p, a { color: #176477; }
 h1, h2, header p { margin: 0 0 .65rem; }
 nav { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
@@ -19,3 +19,6 @@ input, select { min-width: 0; box-sizing: border-box; padding: .55rem; border: 1
 .table { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th, td { padding: .65rem; border-bottom: 1px solid #dce8ec; }
+.pi-pages { margin-bottom: 1.2rem; }
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 720px) { .dashboard-grid { grid-template-columns: 1fr; gap: 0; } }
