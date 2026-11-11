@@ -28,12 +28,6 @@ CATALOG = {
     "pricing": ("Price name", "Price in pence"),
     "store": ("Product name", "Stock units"),
 }
-PI_PAGES = {
-    "dashboard": "/", "settings": "/business-settings", "sunbeds": "/sunbed-settings",
-    "customers": "/customers", "staff": "/staff", "pricing": "/pricing",
-    "packages": "/packages", "store": "/store", "transactions": "/transactions",
-    "tills": "/till-sessions", "reports": "/reports",
-}
 PRIVATE_NETWORKS = tuple(ipaddress.ip_network(network) for network in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
 ))
@@ -269,9 +263,12 @@ def workspace(slug, section):
         """, (tenant,))
         return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in" if owner else "register"))
     account = web.member(tenant, web.TEAM)
-    pi_links = []
-    if account["role"] == "owner":
-        pi_links = [row for row in paired_tills(tenant) if row["origin"]]
+    if account["role"] == "owner" and request.method == "GET":
+        linked_tills = [row for row in paired_tills(tenant) if row["origin"]]
+        if linked_tills:
+            if section != "dashboard":
+                return redirect(office_url(tenant))
+            return render(salon, slug, "linked-office", tills=linked_tills)
     if section in {"staff", "packages"}:
         endpoint = "salon.provision_team" if section == "staff" else "checkout.manage"
         return redirect(url_for(endpoint, tenant=tenant))
@@ -358,7 +355,7 @@ def workspace(slug, section):
         sales = records if section == "reports" else transactions(tenant)
         metrics["Recent till sales"] = "£" + format(sum((row[5] for row in sales), Decimal(0)), ",.2f")
     return render(salon, slug, "workspace", section=section, account=account, rows=rows, columns=columns,
-                  metrics=metrics, catalog=CATALOG.get(section), pi_links=pi_links, pi_pages=PI_PAGES,
+                  metrics=metrics, catalog=CATALOG.get(section),
                   sites=sites, staff=staff, search=search)
 
 

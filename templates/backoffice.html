@@ -88,30 +88,19 @@
 {% else %}<p>Pair and license a till for this salon before linking its back office.</p>{% endfor %}
 <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=salon.business_account_public_id) }}">Back to business record</a>
 </section>
+{% elif mode == "linked-office" %}
+<section class="panel">
+<h2>Back office</h2>
+{% for till in tills %}
+<p><a class="pi-launch" href="{{ till.origin }}/" rel="noreferrer">Open back office{% if tills|length > 1 %} · {{ till.site_name }} · {{ till.terminal_name }}{% endif %}</a></p>
+{% endfor %}
+<p>Connect to your salon’s private network to open the back office.</p>
+<form method="post" action="{{ url_for('backoffice.sign_out', slug=slug) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><button>Sign out</button>
+</form>
+</section>
 {% else %}
 {% include 'backoffice_nav.html' %}
-{% if pi_links %}
-<section class="panel">
-<h2>Paired Pi back office</h2>
-{% for till in pi_links %}
-<h3>{{ till.site_name }} · {{ till.terminal_name }}</h3>
-{% if section == 'dashboard' %}
-<p><a class="pi-launch" href="{{ till.origin }}/" target="_blank" rel="noopener noreferrer">Open full Pi back office</a></p>
-{% endif %}
-<nav class="pi-pages" aria-label="{{ till.terminal_name }} back office pages">
-{% if section == 'dashboard' %}
-{% for key, path in pi_pages.items() %}
-{% if key != 'dashboard' %}
-<a href="{{ till.origin }}{{ path }}" target="_blank" rel="noopener noreferrer">{{ sections[key] }}</a>
-{% endif %}
-{% endfor %}
-{% else %}
-<a href="{{ till.origin }}{{ pi_pages[section] }}" target="_blank" rel="noopener noreferrer">Open {{ sections[section] }} on this Pi</a>
-{% endif %}
-</nav>
-{% endfor %}
-</section>
-{% endif %}
 <section class="panel"><h2>{{ sections[section] }}</h2>
 {% if section == 'dashboard' %}
 {% set customer_url = url_for('salon.customer_login', tenant=salon.business_account_public_id) %}

@@ -521,16 +521,17 @@ def test_pi_backoffice_links_stay_with_paired_terminal(platform, tenant):
                                   "origin": origin}).status_code == 303
     result = browser.get(f"/{slug}")
     assert result.status_code == 200
-    for feature in ("business-settings", "till-sessions", "store"):
-        assert f"{origin}/{feature}".encode() in result.data
+    assert result.data.count(f'href="{origin}/"'.encode()) == 1
+    assert b'<nav' not in result.data
+    assert browser.get(f"/{slug}/store").location == f"/{slug}"
     payload = sale(terminal, event_id="backoffice-sale")
     payload["events"][0]["payload"].update(transaction_number="TX-VERIFY", total_amount="12.50")
     assert app.test_client().post("/v1/sync/events/push", json=payload, headers=device_headers).status_code == 200
-    transactions = browser.get(f"/{slug}/transactions").data
-    assert b"TX-VERIFY" in transactions and b"GBP 12.50" in transactions
-    assert b"Verification" in browser.get(f"/{slug}/customers?q=verification").data
-    assert b"No records yet." in browser.get(f"/{slug}/customers?q=not-a-customer").data
     with app.app_context():
         p.platform_execute("update cloud_terminal_registry set management_status='suspended' where terminal_device_public_id=?",
                            (terminal,))
     assert f"{origin}/".encode() not in browser.get(f"/{slug}").data
+    transactions = browser.get(f"/{slug}/transactions").data
+    assert b"TX-VERIFY" in transactions and b"GBP 12.50" in transactions
+    assert b"Verification" in browser.get(f"/{slug}/customers?q=verification").data
+    assert b"No records yet." in browser.get(f"/{slug}/customers?q=not-a-customer").data
