@@ -1,0 +1,13 @@
+<nav class="panel" aria-label="Back office">
+{% for key, title in sections.items() %}
+{% if key != 'packages' or account.role == 'owner' %}
+<a href="{{ url_for('backoffice.workspace', slug=slug, section=key) }}" {% if section == key %}aria-current="page"{% endif %}>{{ title }}</a>
+{% endif %}
+{% endfor %}
+{% if account.role == 'owner' %}
+<a href="{{ url_for('marketing.campaigns', tenant=salon.business_account_public_id) }}" {% if request.endpoint == 'marketing.campaigns' %}aria-current="page"{% endif %}>Marketing</a>
+{% endif %}
+<form method="post" action="{{ url_for('backoffice.sign_out', slug=slug) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><button>Sign out</button>
+</form>
+</nav>

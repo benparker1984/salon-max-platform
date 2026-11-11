@@ -68,7 +68,7 @@ used for the sealed restore, and an arbitrary test `SALONMAX_SECRET_KEY`, instal
 Before deploying, validate recovery idempotence, protected routes, all console
 screens, duplicate/concurrent sync delivery, rollback, tenant boundaries, imports,
 corrections, media and export. After deploying, check `/healthz` for
-`release=salon-web-v6` and `recovery_applied=true`, then verify authenticated
+`release=salon-web-v7` and `recovery_applied=true`, then verify authenticated
 pages and the public /salon/ portal.
 
 ## Hosted salon portal

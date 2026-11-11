@@ -64,6 +64,14 @@ def member(tenant, roles):
 
 
 def page(**context):
+    team_account = context.pop("team_account", None)
+    if team_account:
+        from backoffice import SECTIONS, office_url
+        tenant = context["salon"]["business_account_public_id"]
+        address = office_url(tenant)
+        if address:
+            context.update(slug=address.lstrip("/"), sections=SECTIONS, account=team_account,
+                           section={"manage": "staff", "offers": "packages"}.get(context["mode"]))
     token = session.setdefault("salon_csrf", secrets.token_urlsafe(32))
     response = make_response(render_template("salon_web.html", csrf=token, **context))
     response.headers["Cache-Control"] = "no-store"
@@ -113,10 +121,10 @@ def provision_team(tenant):
     salon = tenant_record(tenant)
     account = member(tenant, TEAM)
     roles = {"customer", "staff"} if account["role"] == "owner" else {"customer"}
-    return manage(salon, roles, "salon.provision_team")
+    return manage(salon, roles, "salon.provision_team", team_account=account)
 
 
-def manage(salon, roles, endpoint):
+def manage(salon, roles, endpoint, team_account=None):
     tenant = salon["business_account_public_id"]
     invite = None
     if request.method == "POST":
@@ -179,6 +187,7 @@ def manage(salon, roles, endpoint):
         where business_account_public_id=? and status='active' and email<>'' order by last_name, first_name
     """, (tenant,)) if "customer" in roles else []
     return page(salon=salon, mode="manage", roles=sorted(roles), customers=customers, invite=invite,
+                team_account=team_account,
                 accounts=[account for account in accounts if account["role"] in roles])
 
 
@@ -270,6 +279,11 @@ def dashboard(tenant):
     if not session.get("salon_account"):
         return redirect(url_for("salon.customer_login", tenant=tenant))
     account = member(tenant, ROLES)
+    if account["role"] in TEAM:
+        from backoffice import office_url
+        address = office_url(tenant)
+        if address:
+            return redirect(address)
     minutes = None
     if account["role"] == "customer":
         row = p.platform_query_one("""

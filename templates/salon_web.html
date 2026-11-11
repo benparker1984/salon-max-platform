@@ -5,14 +5,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ salon.business_name }} | Salon Max</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='salon-web.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='backoffice.css' if slug else 'salon-web.css') }}">
+{% if not slug %}
 <meta name="theme-color" content="#0c1523">
 <link rel="manifest" href="{{ url_for('salon.manifest', tenant=tenant) if tenant else url_for('static', filename='salon.webmanifest') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='salon-icon-192.png') }}">
 <script src="{{ url_for('static', filename='salon-pwa.js') }}" defer></script>
+{% endif %}
 </head>
 <body><main>
+{% if slug %}
+<header class="panel"><p>Salon Max Back Office</p><h1>{{ salon.business_name }}</h1></header>
+{% include 'backoffice_nav.html' %}
+<section class="panel">
+{% else %}
 <header><span>Salon Max</span><h1>{{ salon.business_name }}</h1></header>
+{% endif %}
 {% if mode == 'choose' %}
 <form method="get"><label>Salon code<input name="code" required maxlength="100"></label><button>Open salon</button></form>
 {% elif mode in ('activate','login') %}
@@ -122,5 +130,6 @@
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="disable"><input type="hidden" name="account_id" value="{{ account.account_id }}"><button>Disable</button></form>
 {% endif %}</li>{% endfor %}</ul>
 {% endif %}
+{% if slug %}</section>{% endif %}
 </main></body>
 </html>

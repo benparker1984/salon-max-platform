@@ -295,18 +295,25 @@ def workspace(slug, section):
         return redirect(url_for("backoffice.workspace", slug=slug, section=section), code=303)
 
     columns, records = [], []
+    search = request.args.get("q", "").strip()[:100] if section == "customers" else ""
     if section == "customers":
-        columns = ["Customer", "Number", "Email", "Phone", "Minutes"]
+        columns = ["Customer No", "Name", "Account No", "Balance", "Package Minutes"]
+        pattern = "%" + search.lower() + "%"
         records = p.platform_query_all("""
-            select c.first_name || ' ' || c.last_name as name, c.customer_number, c.email, c.phone,
+            select c.customer_number, c.first_name || ' ' || c.last_name as name,
+                   c.account_number, coalesce(b.current_balance,'0.00') as balance,
                    coalesce(m.minutes_available,0) as minutes
             from cloud_customers c left join cloud_customer_minute_summary m
             on m.business_account_public_id=c.business_account_public_id and m.customer_public_id=c.customer_public_id
+            left join cloud_customer_balance_summary b
+            on b.business_account_public_id=c.business_account_public_id and b.customer_public_id=c.customer_public_id
             where c.business_account_public_id=? and c.status='active'
+              and (lower(c.first_name || ' ' || c.last_name) like ?
+                   or lower(c.customer_number) like ? or lower(c.account_number) like ?)
             order by c.last_name,c.first_name limit 250
-        """, (tenant,))
+        """, (tenant, pattern, pattern, pattern))
     elif section in {"transactions", "reports"}:
-        columns = ["Time (UTC)", "Type", "Payment", "Amount"]
+        columns = ["Transaction No", "Customer", "Site", "Staff", "Type", "Total", "Payment", "Time (UTC)"]
         records = transactions(tenant)
     elif section == "tills":
         columns = ["Till", "Site", "Status", "Last check-in"]
@@ -322,6 +329,16 @@ def workspace(slug, section):
             where tenant=? and section=? order by name
         """, (tenant, section))
     rows = [list(row.values()) if isinstance(row, dict) else list(row) for row in records]
+    if section == "customers":
+        for row in rows:
+            try:
+                balance = Decimal(str(row[3]))
+                row[3] = f"GBP {balance:,.2f}" if balance.is_finite() else "—"
+            except InvalidOperation:
+                row[3] = "—"
+    elif section in {"transactions", "reports"}:
+        for row in rows:
+            row[5] = f"GBP {row[5]:,.2f}"
     metrics = {}
     sites, staff = [], []
     if section == "dashboard":
@@ -339,18 +356,23 @@ def workspace(slug, section):
             key = "tenant" if table == "web_offers" else "business_account_public_id"
             metrics[label] = p.platform_query_one(f"select count(*) as total from {table} where {key}=?", (tenant,))["total"]
         sales = records if section == "reports" else transactions(tenant)
-        metrics["Recent till sales"] = "£" + format(sum((row[3] for row in sales), Decimal(0)), ",.2f")
+        metrics["Recent till sales"] = "£" + format(sum((row[5] for row in sales), Decimal(0)), ",.2f")
     return render(salon, slug, "workspace", section=section, account=account, rows=rows, columns=columns,
                   metrics=metrics, catalog=CATALOG.get(section), pi_links=pi_links, pi_pages=PI_PAGES,
-                  sites=sites, staff=staff)
+                  sites=sites, staff=staff, search=search)
 
 
 def transactions(tenant):
     rows = p.platform_query_all("""
-        select occurred_at,payload_json from cloud_sync_events
-        where business_account_public_id=? and event_type='transaction.completed'
-        order by occurred_at desc limit 100
+        select e.occurred_at,e.payload_json,s.site_name from cloud_sync_events e
+        left join cloud_terminal_registry t on t.business_account_public_id=e.business_account_public_id
+            and t.terminal_device_public_id=e.terminal_device_public_id
+        left join cloud_business_sites s on s.business_account_public_id=t.business_account_public_id
+            and s.site_public_id=t.site_public_id
+        where e.business_account_public_id=? and e.event_type='transaction.completed'
+        order by e.occurred_at desc,e.id desc limit 100
     """, (tenant,))
+    customers = {}
     result = []
     for row in rows:
         try:
@@ -360,7 +382,22 @@ def transactions(tenant):
                 continue
         except (ValueError, AttributeError, InvalidOperation):
             continue
-        result.append([row["occurred_at"], payload.get("transaction_type", ""), payload.get("payment_method", ""), amount])
+        local_customer = payload.get("customer_id")
+        customer_name = ""
+        if isinstance(local_customer, (int, str)) and local_customer != "":
+            public_id = p.make_cloud_customer_public_id(tenant, local_customer)
+            if public_id not in customers:
+                customer = p.platform_query_one("""
+                    select first_name,last_name from cloud_customers
+                    where business_account_public_id=? and customer_public_id=?
+                """, (tenant, public_id))
+                customers[public_id] = (customer["first_name"] + " " + customer["last_name"]).strip() if customer else ""
+            customer_name = customers[public_id]
+        result.append([
+            payload.get("transaction_number") or "—", customer_name or "—", row["site_name"] or "—",
+            payload.get("staff_name") or "—", payload.get("transaction_type") or "—", amount,
+            payload.get("payment_method") or "—", row["occurred_at"],
+        ])
     return result
 
 

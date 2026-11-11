@@ -84,7 +84,7 @@ def preferences(tenant):
 @bp.route("/salon/<tenant>/marketing", methods=["GET", "POST"])
 def campaigns(tenant):
     salon = web.tenant_record(tenant)
-    web.member(tenant, {"owner"})
+    account = web.member(tenant, {"owner"})
     if request.method == "POST":
         web.verify_csrf()
         channel = request.form.get("channel")
@@ -116,7 +116,7 @@ def campaigns(tenant):
         select channel,status,count(*) as total from web_marketing_outbox
         where tenant=? group by channel,status order by channel,status
     """, (tenant,))
-    return web.page(salon=salon, mode="marketing", counts=counts)
+    return web.page(salon=salon, mode="marketing", counts=counts, team_account=account)
 
 
 @bp.route("/salon/unsubscribe/<token>", methods=["GET", "POST"])

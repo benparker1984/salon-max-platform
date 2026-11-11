@@ -89,20 +89,34 @@
 <a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=salon.business_account_public_id) }}">Back to business record</a>
 </section>
 {% else %}
-<nav class="panel" aria-label="Back office">
-{% for key, title in sections.items() %}
-{% if key != 'packages' or account.role == 'owner' %}
-<a href="{{ url_for('backoffice.workspace', slug=slug, section=key) }}" {% if section == key %}aria-current="page"{% endif %}>{{ title }}</a>
+{% include 'backoffice_nav.html' %}
+{% if pi_links %}
+<section class="panel">
+<h2>Paired Pi back office</h2>
+{% for till in pi_links %}
+<h3>{{ till.site_name }} · {{ till.terminal_name }}</h3>
+{% if section == 'dashboard' %}
+<p><a class="pi-launch" href="{{ till.origin }}/" target="_blank" rel="noopener noreferrer">Open full Pi back office</a></p>
+{% endif %}
+<nav class="pi-pages" aria-label="{{ till.terminal_name }} back office pages">
+{% if section == 'dashboard' %}
+{% for key, path in pi_pages.items() %}
+{% if key != 'dashboard' %}
+<a href="{{ till.origin }}{{ path }}" target="_blank" rel="noopener noreferrer">{{ sections[key] }}</a>
 {% endif %}
 {% endfor %}
-<form method="post" action="{{ url_for('backoffice.sign_out', slug=slug) }}">
-<input type="hidden" name="csrf" value="{{ csrf }}"><button>Sign out</button>
-</form>
+{% else %}
+<a href="{{ till.origin }}{{ pi_pages[section] }}" target="_blank" rel="noopener noreferrer">Open {{ sections[section] }} on this Pi</a>
+{% endif %}
 </nav>
+{% endfor %}
+</section>
+{% endif %}
 <section class="panel"><h2>{{ sections[section] }}</h2>
 {% if section == 'dashboard' %}
-<a href="{{ url_for('salon.customer_login', tenant=salon.business_account_public_id) }}">Customer portal</a>
-{% if account.role == 'owner' %}<a href="{{ url_for('marketing.campaigns', tenant=salon.business_account_public_id) }}">Marketing and outbox</a>{% endif %}
+{% set customer_url = url_for('salon.customer_login', tenant=salon.business_account_public_id) %}
+<p><a href="{{ customer_url }}">Open customer portal</a></p>
+<label>Link to share with customers<input readonly value="https://www.salonmax.co.uk{{ customer_url }}"></label>
 {% endif %}
 {% if section == 'settings' %}
 {% if account.role == 'owner' %}
@@ -120,7 +134,10 @@
 {% endif %}
 {% if section == 'tills' %}<p>Device status from cloud check-ins.</p>{% endif %}
 {% if section == 'customers' %}
-<p>Up to 250 active customer records from this salon.</p>
+<form method="get" class="catalog">
+<label>Find a customer<input type="search" name="q" value="{{ search }}" maxlength="100" placeholder="Customer number, account number, or name"></label>
+<button>Search</button>
+</form>
 <a href="{{ url_for('salon.provision_team', tenant=salon.business_account_public_id) }}">Manage customer access</a>
 {% endif %}
 {% if columns %}
@@ -165,23 +182,6 @@
 </section>
 {% endif %}
 </div>
-{% endif %}
-{% if pi_links %}
-<section class="panel">
-<h2>Paired Pi back office</h2>
-{% for till in pi_links %}
-<h3>{{ till.site_name }} · {{ till.terminal_name }}</h3>
-<nav class="pi-pages" aria-label="{{ till.terminal_name }} back office pages">
-{% if section == 'dashboard' %}
-{% for key, path in pi_pages.items() %}
-<a href="{{ till.origin }}{{ path }}" target="_blank" rel="noopener noreferrer">{{ sections[key] }}</a>
-{% endfor %}
-{% else %}
-<a href="{{ till.origin }}{{ pi_pages[section] }}" target="_blank" rel="noopener noreferrer">Open {{ sections[section] }} on this Pi</a>
-{% endif %}
-</nav>
-{% endfor %}
-</section>
 {% endif %}
 {% endif %}
 </main></body></html>

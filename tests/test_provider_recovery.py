@@ -32,6 +32,7 @@ def tenant(platform):
     headers={'Authorization':'Bearer '+token,'X-SalonMax-Business-Id':business,'X-SalonMax-Device-Id':device}
     yield business,site,device,headers
     with app.app_context():
+        p.platform_execute('delete from web_pi_backoffices where tenant=?',(business,))
         for table in ['cloud_customer_balance_ledger','cloud_customer_minute_ledger','cloud_customer_balance_summary','cloud_customer_minute_summary','cloud_customers','cloud_support_notes','cloud_sync_events','cloud_device_licences','cloud_terminal_registry','cloud_business_sites','platform_media']:
             p.platform_execute(f'delete from {table} where business_account_public_id=?',(business,))
         p.platform_execute('delete from cloud_business_accounts where business_account_public_id=?',(business,))
@@ -432,6 +433,12 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
         "csrf": csrf, "email": email, "role": "owner", "password": "First valid password"
     }).status_code == 303
     assert browser.get(address).status_code == 200
+    assert browser.get(f"/salon/{tenant}/").location == address
+    for section in ("access", "offers", "marketing"):
+        management_page = browser.get(f"/salon/{tenant}/{section}")
+        assert management_page.status_code == 200
+        assert b"/static/backoffice.css" in management_page.data
+        assert b'aria-label="Back office"' in management_page.data
     for section in ("settings", "sunbeds", "customers", "pricing", "store", "transactions", "tills", "reports"):
         assert browser.get(f"{address}/{section}").status_code == 200, section
     assert browser.get(other_address + "/customers").status_code == 403
@@ -489,7 +496,9 @@ def test_pi_backoffice_links_stay_with_paired_terminal(platform, tenant):
     import backoffice
 
     app, p = platform
-    business, _, terminal, _ = tenant
+    business, _, terminal, device_headers = tenant
+    octets = uuid.uuid4().bytes
+    origin = f"http://10.{octets[0]}.{octets[1]}.{octets[2]}:5001"
     with app.app_context():
         slug = backoffice.setup(business, "Linked salon")
         account = uuid.uuid4().hex
@@ -505,17 +514,23 @@ def test_pi_backoffice_links_stay_with_paired_terminal(platform, tenant):
     with admin.session_transaction() as state:
         csrf = state["salon_csrf"]
     assert admin.post(path, data={"csrf": csrf, "terminal_id": "another-tenant",
-                                  "origin": "http://100.64.20.31:5001"}).status_code == 404
+                                  "origin": origin}).status_code == 404
     assert admin.post(path, data={"csrf": csrf, "terminal_id": terminal,
                                   "origin": "https://example.invalid:5001"}).status_code == 400
     assert admin.post(path, data={"csrf": csrf, "terminal_id": terminal,
-                                  "origin": "http://100.64.20.31:5001"}).status_code == 303
+                                  "origin": origin}).status_code == 303
     result = browser.get(f"/{slug}")
     assert result.status_code == 200
-    assert b"http://100.64.20.31:5001/business-settings" in result.data
-    assert b"http://100.64.20.31:5001/till-sessions" in result.data
-    assert b"http://100.64.20.31:5001/store" in result.data
+    for feature in ("business-settings", "till-sessions", "store"):
+        assert f"{origin}/{feature}".encode() in result.data
+    payload = sale(terminal, event_id="backoffice-sale")
+    payload["events"][0]["payload"].update(transaction_number="TX-VERIFY", total_amount="12.50")
+    assert app.test_client().post("/v1/sync/events/push", json=payload, headers=device_headers).status_code == 200
+    transactions = browser.get(f"/{slug}/transactions").data
+    assert b"TX-VERIFY" in transactions and b"GBP 12.50" in transactions
+    assert b"Verification" in browser.get(f"/{slug}/customers?q=verification").data
+    assert b"No records yet." in browser.get(f"/{slug}/customers?q=not-a-customer").data
     with app.app_context():
         p.platform_execute("update cloud_terminal_registry set management_status='suspended' where terminal_device_public_id=?",
                            (terminal,))
-    assert b"http://100.64.20.31:5001/" not in browser.get(f"/{slug}").data
+    assert f"{origin}/".encode() not in browser.get(f"/{slug}").data

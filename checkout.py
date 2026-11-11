@@ -60,7 +60,7 @@ def offers(tenant):
 @bp.route("/salon/<tenant>/offers", methods=["GET", "POST"])
 def manage(tenant):
     salon = web.tenant_record(tenant)
-    web.member(tenant, {"owner"})
+    account = web.member(tenant, {"owner"})
     if request.method == "POST":
         web.verify_csrf()
         offer_id = request.form.get("retire")
@@ -78,7 +78,7 @@ def manage(tenant):
             p.platform_execute("insert into web_offers (tenant,offer_id,title,minutes,amount) values (?,?,?,?,?)",
                                (tenant, secrets.token_hex(16), title, minutes, amount))
         return redirect(url_for("checkout.manage", tenant=tenant), code=303)
-    return web.page(salon=salon, mode="offers", offers=offers(tenant))
+    return web.page(salon=salon, mode="offers", offers=offers(tenant), team_account=account)
 
 
 @bp.post("/salon/<tenant>/buy")

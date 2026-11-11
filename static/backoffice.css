@@ -20,5 +20,7 @@ input, select { min-width: 0; box-sizing: border-box; padding: .55rem; border: 1
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th, td { padding: .65rem; border-bottom: 1px solid #dce8ec; }
 .pi-pages { margin-bottom: 1.2rem; }
+.pi-launch { display: inline-block; padding: .65rem .9rem; border-radius: .55rem; background: #155e75; color: #fff; font-weight: 600; text-decoration: none; }
+textarea { box-sizing: border-box; padding: .55rem; border: 1px solid #a5bbc3; border-radius: .4rem; font: inherit; }
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 18px; }
 @media (max-width: 720px) { .dashboard-grid { grid-template-columns: 1fr; gap: 0; } }
