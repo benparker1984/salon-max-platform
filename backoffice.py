@@ -5,6 +5,7 @@ import re
 import secrets
 from decimal import Decimal, InvalidOperation
 from urllib.error import URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from flask import Blueprint, abort, make_response, redirect, render_template, request, session, url_for
@@ -12,6 +13,7 @@ from flask import Blueprint, abort, make_response, redirect, render_template, re
 import provider as p
 import salon_web as web
 from werkzeug.security import generate_password_hash
+from werkzeug.exceptions import BadRequest, NotFound
 
 bp = Blueprint("backoffice", __name__)
 ORIGIN = "https://www.salonmax.co.uk"
@@ -150,7 +152,28 @@ def workspace(slug, section):
     if section == "register":
         if request.method == "POST":
             web.verify_csrf()
-            return web.activate(tenant, request.form.get("setup_code", "").strip())
+            setup = request.form.get("setup_code", "").strip()
+            token = setup
+            if len(setup) <= 512 and "/" in setup:
+                try:
+                    link = urlsplit(setup)
+                    candidate = link.path.rsplit("/", 1)[-1]
+                    expected_path = url_for("salon.activate", tenant=tenant, token=candidate)
+                    if (link.scheme, link.netloc) in {("", ""), ("https", "www.salonmax.co.uk")} and link.path == expected_path:
+                        token = candidate
+                except ValueError:
+                    pass
+            if re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+                try:
+                    return web.activate(tenant, token)
+                except BadRequest as exc:
+                    return render(salon, slug, "register", error=exc.description)
+                except NotFound:
+                    pass
+            return render(salon, slug, "register", error=(
+                "This setup link or code is invalid, expired, or already used. "
+                "If your password was saved, sign in below. Otherwise, ask for a new setup link."
+            ))
         return render(salon, slug, "register")
     if section not in SECTIONS:
         abort(404)

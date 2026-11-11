@@ -422,8 +422,12 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
     assert browser.post(link, data={
         "csrf": csrf, "email": "wrong@example.invalid", "password": "First valid password"
     }).status_code == 400
-    registered = browser.post(link, data={"csrf": csrf, "email": email, "password": "First valid password"})
+    registration = {"csrf": csrf, "email": email, "password": "First valid password",
+                    "setup_code": "https://www.salonmax.co.uk" + link}
+    registered = browser.post(address + "/register", data=registration)
     code = re.search(rb'Recovery code<input readonly value="([A-Za-z0-9_-]{32})"', registered.data)[1].decode()
+    replay = browser.post(address + "/register", data=registration)
+    assert replay.status_code == 200 and b"already used" in replay.data
     assert browser.post(address + "/sign-in", data={
         "csrf": csrf, "email": email, "role": "owner", "password": "First valid password"
     }).status_code == 303

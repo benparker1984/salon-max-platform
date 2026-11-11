@@ -25,10 +25,11 @@
 {% elif mode == "register" %}
 <section class="panel auth">
 <h2>{{ 'Choose a new password' if resetting else 'Register your back office account' }}</h2>
-{% if not token %}<p>Ask your salon administrator for a one-time setup link. You can open that link directly or enter its setup code below.</p>{% endif %}
+{% if not token %}<p>Open the one-time setup link from your salon administrator, or paste it below.</p>{% endif %}
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-{% if not token %}<label>Setup code<input name="setup_code" required maxlength="43" autocomplete="off"></label>{% endif %}
+{% if not token %}<label>Setup link or code<input name="setup_code" required maxlength="512" autocomplete="off"></label>{% endif %}
 <label>Email address<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
 <label>{{ 'New password' if resetting else 'Choose a password' }}<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="128"></label>
 <button>{{ 'Set new password' if resetting else 'Create account' }}</button>
