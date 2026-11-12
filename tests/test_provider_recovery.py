@@ -398,7 +398,10 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
     path = urlparse(response.location).path
     tenant = path.rsplit("/", 1)[-1]
     address = f"/salonmax-ultraviolet{suffix}-backoffice"
-    assert address.encode() in admin.get(path).data
+    assert (address + "/sign-in").encode() in admin.get(path).data
+    with admin.session_transaction() as state:
+        state["salon_account"] = "stale-salon-session"
+    assert admin.get(address).location == address + "/sign-in"
     commissioning_page = admin.get(f"/commissioning/platform/business/{tenant}")
     assert commissioning_page.status_code == 200
     assert address.encode() in commissioning_page.data

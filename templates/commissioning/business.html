@@ -20,7 +20,7 @@
     <p class="muted">Share this sign-in address with {{ business.name }}.</p>
     <p><code>https://www.salonmax.co.uk{{ backoffice }}</code></p>
     <div class="row">
-        <a class="button" href="{{ backoffice }}">Open hosted back office</a>
+        <a class="button" href="{{ url_for('backoffice.workspace', slug=backoffice.lstrip('/'), section='sign-in') }}">Sign in to salon back office</a>
         <a class="button secondary" href="{{ url_for('salon.provision_owner', tenant=business.public_id) }}">Salon owner web access</a>
         <a class="button secondary" href="{{ url_for('salon.provision_customers', tenant=business.public_id) }}">Customer online access</a>
         <a class="button secondary" href="{{ url_for('backoffice.manage_pi_links', tenant=business.public_id) }}">Link paired Pi back office</a>

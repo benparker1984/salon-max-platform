@@ -14,7 +14,7 @@ from flask import Blueprint, abort, flash, make_response, redirect, render_templ
 import provider as p
 import salon_web as web
 from werkzeug.security import generate_password_hash
-from werkzeug.exceptions import BadRequest, NotFound
+from werkzeug.exceptions import BadRequest, Forbidden, NotFound
 
 bp = Blueprint("backoffice", __name__)
 ORIGIN = "https://www.salonmax.co.uk"
@@ -262,7 +262,13 @@ def workspace(slug, section):
               and password_hash is not null and disabled=0 limit 1
         """, (tenant,))
         return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in" if owner else "register"))
-    account = web.member(tenant, web.TEAM)
+    try:
+        account = web.member(tenant, web.TEAM)
+    except Forbidden:
+        if request.method == "GET" and (session.get("platform_admin_authenticated")
+                                        or session.get("salonmax_platform_authed")):
+            return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in"))
+        raise
     if account["role"] == "owner" and request.method == "GET":
         linked_tills = [row for row in paired_tills(tenant) if row["origin"]]
         if linked_tills:
