@@ -652,3 +652,25 @@ def test_customer_can_request_link_and_keep_existing_minutes(platform, tenant):
     assert admin.post(manage, data=form).status_code == 303
     assert admin.post(manage, data=form).status_code == 303
     assert b"30 available" in browser.get(f"/salon/{business}/").data
+
+
+def test_till_course_import_updates_by_package_code(platform, tenant):
+    app, p = platform
+    business, *_ = tenant
+    owner = uuid.uuid4().hex
+    with app.app_context():
+        p.platform_execute("insert into web_accounts (account_id,tenant,login,role) values (?,?,'owner','owner')",
+                           (owner, business))
+    client = app.test_client()
+    with client.session_transaction() as state:
+        state["salon_account"] = owner
+        state["salon_csrf"] = "course-test"
+    path = f"/salon/{business}/offers"
+    form = {"csrf": "course-test", "action": "import-till-courses",
+            "courses": "30 Minute Package,PKG30,30,30.00,365"}
+    assert client.post(path, data=form).status_code == 303
+    form["courses"] = "30 Minute Package,PKG30,30,32.50,365"
+    assert client.post(path, data=form).status_code == 303
+    with app.app_context():
+        rows = p.platform_query_all("select amount from web_offers where tenant=?", (business,))
+        assert [row["amount"] for row in rows] == [3250]

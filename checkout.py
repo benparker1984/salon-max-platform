@@ -1,15 +1,18 @@
 """Stripe Checkout for in-salon services."""
+import csv
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
+from decimal import Decimal
 from urllib.error import URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-from flask import Blueprint, abort, redirect, request, url_for
+from flask import Blueprint, abort, flash, redirect, request, url_for
 
 import provider as p
 import salon_web as web
@@ -64,7 +67,10 @@ def manage(tenant):
     if request.method == "POST":
         web.verify_csrf()
         offer_id = request.form.get("retire")
-        if offer_id:
+        if request.form.get("action") == "import-till-courses":
+            count = import_till_courses(tenant, request.form.get("courses", ""))
+            flash(f"Imported {count} courses from the till list.", "courses")
+        elif offer_id:
             p.platform_execute("update web_offers set active=0 where tenant=? and offer_id=?", (tenant, offer_id))
         else:
             title = request.form.get("title", "").strip()
@@ -86,6 +92,43 @@ def manage(tenant):
         order by orders.paid_at desc,orders.order_id desc limit 50
     """, (tenant,))
     return web.page(salon=salon, mode="offers", offers=offers(tenant), sales=sales, team_account=account)
+
+
+def import_till_courses(tenant, raw):
+    if not raw.strip() or len(raw) > 24000:
+        abort(400, "Paste up to 100 courses from your till.")
+    courses = {}
+    separator = "\t" if "\t" in raw.partition("\n")[0] else ","
+    for row in csv.reader(raw.splitlines(), delimiter=separator):
+        if not row or not any(cell.strip() for cell in row):
+            continue
+        if [cell.strip().lower() for cell in row[:2]] == ["name", "code"]:
+            continue
+        if len(row) not in (4, 5):
+            abort(400, "Each course needs a name, code, minutes and GBP price.")
+        title, code, minutes_text, price_text = (cell.strip() for cell in row[:4])
+        code = code.upper()
+        pounds = price_text.removeprefix("GBP ").removeprefix(chr(163)).strip()
+        if not re.fullmatch(r"[0-9]{1,5}", minutes_text) or not re.fullmatch(r"[0-9]{1,5}(?:\.[0-9]{1,2})?", pounds):
+            abort(400, "Check the course minutes and GBP price.")
+        minutes, price = int(minutes_text), int(Decimal(pounds) * 100)
+        if (not title or len(title) > 80 or not re.fullmatch(r"[A-Z0-9_-]{1,40}", code)
+                or not 1 <= minutes <= 10000 or not 30 <= price <= 100000
+                or code in courses or len(courses) >= 100):
+            abort(400, "Check the course details and use each package code once.")
+        courses[code] = (title, minutes, price)
+    if not courses:
+        abort(400, "Paste at least one course.")
+    db = p.get_platform_db()
+    for code, (title, minutes, price) in courses.items():
+        db.execute("""
+            insert into web_offers (tenant,offer_id,title,minutes,amount)
+            values (?,?,?,?,?)
+            on conflict (tenant,offer_id) do update set title=excluded.title,
+                minutes=excluded.minutes, amount=excluded.amount
+        """, (tenant, "till:" + code, title, minutes, price))
+    db.commit()
+    return len(courses)
 
 
 @bp.post("/salon/<tenant>/buy")
