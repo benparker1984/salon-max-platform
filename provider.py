@@ -5580,7 +5580,8 @@ def salonmax_platform_login():
 
 @app.route("/platform-logout")
 def salonmax_platform_logout():
-    session.clear()
+    session.pop("platform_admin_authenticated", None)
+    session.pop("salonmax_platform_authed", None)
     session.pop("platform_admin_username", None)
     return redirect(url_for("salonmax_platform_login", notice="Signed out."))
 

@@ -75,16 +75,45 @@ def tenant_record(tenant):
     return row
 
 
+def clear_customer_session():
+    session.pop("salon_account", None)
+    session.pop("salon_proof", None)
+
+
+def clear_team_session(tenant):
+    teams = dict(session.get("salon_team_sessions", {}))
+    if teams.pop(tenant, None) is not None:
+        session["salon_team_sessions"] = teams
+    # Older sign-ins used a single slot shared with the customer portal.
+    legacy = session.get("salon_account")
+    if legacy and p.platform_query_one("""
+        select 1 from web_accounts where tenant=? and account_id=? and role in ('owner','staff')
+    """, (tenant, legacy)):
+        clear_customer_session()
+
+
 def member(tenant, roles):
-    identity = session.get("salon_account")
-    account = p.platform_query_one("select * from web_accounts where tenant=? and account_id=? and disabled=0",
-                                   (tenant, identity)) if identity else None
-    if not account or account["role"] not in roles:
-        abort(403)
-    if account["password_hash"] and session.get("salon_proof") != digest(account["password_hash"]):
-        session.clear()
-        abort(403)
-    return account
+    team = session.get("salon_team_sessions", {}).get(tenant) if roles & TEAM else None
+    legacy = (session.get("salon_account"), session.get("salon_proof"))
+    credentials = [legacy, team] if "customer" in roles else [team, legacy]
+    for credential in credentials:
+        if not credential or not credential[0]:
+            continue
+        identity, proof = credential
+        account = p.platform_query_one(
+            "select * from web_accounts where tenant=? and account_id=? and disabled=0",
+            (tenant, identity),
+        )
+        if not account or account["role"] not in roles:
+            continue
+        if account["password_hash"] and proof != digest(account["password_hash"]):
+            if credential is team:
+                clear_team_session(tenant)
+            else:
+                clear_customer_session()
+            abort(403)
+        return account
+    abort(403)
 
 
 def page(**context):
@@ -337,7 +366,7 @@ def customer_join(tenant):
                 """, (tenant, account_id, details["full_name"], details["address_line"],
                       details["town"], details["postcode"], details["phone"]))
                 db.commit()
-                session.clear()
+                clear_customer_session()
                 session["salon_account"] = account_id
                 session["salon_proof"] = digest(password_hash)
                 return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
@@ -403,7 +432,7 @@ def activate(tenant, token):
         code = recovery_code(db, row["account_id"]) if team_office else None
         db.commit()
         if session.get("salon_account") == row["account_id"]:
-            session.clear()
+            clear_customer_session()
         if code:
             return recovery_page(salon, code)
         return redirect(url_for("salon.customer_login" if row["role"] == "customer" else "salon.login", tenant=tenant), code=303)
@@ -517,9 +546,14 @@ def authenticate(tenant, login_name, role, password):
     """, (tenant, login_name, role))
     if not check_password_hash(row["password_hash"] if row else DUMMY_HASH, password) or not row:
         return False
-    session.clear()
-    session["salon_account"] = row["account_id"]
-    session["salon_proof"] = digest(row["password_hash"])
+    proof = digest(row["password_hash"])
+    if role in TEAM:
+        teams = dict(session.get("salon_team_sessions", {}))
+        teams[tenant] = [row["account_id"], proof]
+        session["salon_team_sessions"] = teams
+    else:
+        session["salon_account"] = row["account_id"]
+        session["salon_proof"] = proof
     return True
 
 
@@ -527,7 +561,7 @@ def authenticate(tenant, login_name, role, password):
 @bp.get('/salon/<tenant>/customer/<any("top-up",history):section>')
 def dashboard(tenant, section):
     salon = tenant_record(tenant)
-    if not session.get("salon_account"):
+    if not (session.get("salon_account") or session.get("salon_team_sessions", {}).get(tenant)):
         return redirect(url_for("salon.customer_login", tenant=tenant))
     account = member(tenant, {"customer"} if section else ROLES)
     if account["role"] in TEAM:
@@ -604,8 +638,8 @@ def tanning_history(tenant, customer_id):
 @bp.post("/salon/<tenant>/logout")
 def logout(tenant):
     verify_csrf()
-    session.clear()
-    return redirect(url_for("salon.login", tenant=tenant), code=303)
+    clear_customer_session()
+    return redirect(url_for("salon.customer_login", tenant=tenant), code=303)
 
 
 @bp.get("/salon/")

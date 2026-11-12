@@ -444,8 +444,32 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
         assert b'aria-label="Back office"' in management_page.data
     for section in ("settings", "sunbeds", "customers", "pricing", "store", "transactions", "tills", "reports"):
         assert browser.get(f"{address}/{section}").status_code == 200, section
-    assert browser.get(other_address + "/customers").status_code == 403
+    assert browser.get(other_address + "/customers").status_code == 302
     assert browser.post(other_address + "/settings", data={"phone": "unauthorised"}).status_code == 403
+
+    from werkzeug.security import generate_password_hash
+    with app.app_context():
+        p.platform_execute("""
+            insert into web_accounts (account_id,tenant,login,role,password_hash)
+            values (?,?,?,'owner',?)
+        """, (uuid.uuid4().hex, other, email, generate_password_hash("Other salon password")))
+    with browser.session_transaction() as state:
+        csrf = state["salon_csrf"]
+    assert browser.post(other_address + "/sign-in", data={
+        "csrf": csrf, "email": email, "role": "owner", "password": "Other salon password",
+    }).status_code == 303
+    assert browser.get(other_address).status_code == 200
+    assert browser.get(address).status_code == 200
+    assert browser.get("/platform").status_code == 302
+    with browser.session_transaction() as state:
+        state["platform_admin_authenticated"] = True
+    assert browser.post(other_address + "/sign-out", data={"csrf": csrf}).status_code == 303
+    assert browser.get(other_address).location == other_address + "/sign-in"
+    assert browser.get(address).status_code == 200
+    assert browser.get("/platform").status_code == 200
+    assert browser.get("/platform-logout").status_code == 302
+    assert browser.get("/platform").status_code == 302
+    assert browser.get(address).status_code == 200
 
     reset_path = address + "/forgot-password"
     resetter = app.test_client()
@@ -461,7 +485,7 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
         "csrf": csrf, "email": email, "method": "recovery-code", "code": code,
         "password": "Cannot reuse the code",
     }).data
-    assert browser.get(address).status_code == 403
+    assert browser.get(address).location == address + "/sign-in"
     assert resetter.post(address + "/sign-in", data={
         "csrf": csrf, "email": email, "role": "owner", "password": "Recovered fixture password"
     }).status_code == 303
@@ -486,7 +510,7 @@ def test_onboarding_provisions_hosted_backoffice(platform, monkeypatch):
         "csrf": csrf, "email": email, "password": "Second valid password"
     }).data
     assert resetter.get(reset_link).status_code == 404
-    assert signed_in.get(address).status_code == 403
+    assert signed_in.get(address).location == address + "/sign-in"
     assert b"did not match" in resetter.post(address + "/sign-in", data={
         "csrf": csrf, "email": email, "role": "owner", "password": "First valid password"
     }).data

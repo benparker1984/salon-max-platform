@@ -610,7 +610,9 @@ def platform_login():
 
 @app.route("/platform-logout")
 def platform_logout():
-    session.clear()
+    session.pop("platform_admin_authenticated", None)
+    session.pop("salonmax_platform_authed", None)
+    session.pop("platform_admin_username", None)
     return redirect(url_for("platform_login"))
 
 

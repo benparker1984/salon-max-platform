@@ -196,9 +196,9 @@ def recovery_page(salon, code):
 
 @bp.post("/<slug>/sign-out")
 def sign_out(slug):
-    resolve(slug)
+    tenant, _ = resolve(slug)
     web.verify_csrf()
-    session.clear()
+    web.clear_team_session(tenant)
     return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in"), code=303)
 
 
@@ -256,19 +256,17 @@ def workspace(slug, section):
         return render(salon, slug, "register")
     if section not in SECTIONS:
         abort(404)
-    if not session.get("salon_account"):
+    try:
+        account = web.member(tenant, web.TEAM)
+    except Forbidden:
+        if request.method != "GET":
+            raise
         owner = p.platform_query_one("""
             select 1 from web_accounts where tenant=? and role='owner'
               and password_hash is not null and disabled=0 limit 1
         """, (tenant,))
-        return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in" if owner else "register"))
-    try:
-        account = web.member(tenant, web.TEAM)
-    except Forbidden:
-        if request.method == "GET" and (session.get("platform_admin_authenticated")
-                                        or session.get("salonmax_platform_authed")):
-            return redirect(url_for("backoffice.workspace", slug=slug, section="sign-in"))
-        raise
+        destination = "sign-in" if owner or session.get("salon_account") else "register"
+        return redirect(url_for("backoffice.workspace", slug=slug, section=destination))
     if account["role"] == "owner" and request.method == "GET":
         linked_tills = [row for row in paired_tills(tenant) if row["origin"]]
         if linked_tills:
@@ -501,7 +499,7 @@ def recover_with_code(tenant, salon, slug, email):
             replacement = recovery_code(db, row["account_id"])
             db.commit()
             if session.get("salon_account") == row["account_id"]:
-                session.clear()
+                web.clear_customer_session()
             return recovery_page(salon, replacement)
     db.rollback()
     return render(salon, slug, "forgot", error="The email address or recovery code did not match.",
