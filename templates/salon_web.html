@@ -131,7 +131,7 @@
 <h2>Minute activity</h2>
 {% if history %}
 {% set activity = {'web_purchase': 'Online top-up', 'minutes_purchased': 'Package purchase',
-    'minutes_used': 'Tanning session', 'manual_credit': 'Salon credit', 'manual_debit': 'Salon adjustment',
+    'minutes_used': 'Tanning session', 'backoffice_topup': 'Salon top-up', 'manual_credit': 'Salon credit', 'manual_debit': 'Salon adjustment',
     'refund_credit': 'Refund', 'reversal_debit': 'Reversal'} %}
 <ul>{% for entry in history %}
 <li>{{ entry.created_at }} &middot; {{ activity.get(entry.entry_type, 'Account activity') }} &middot;

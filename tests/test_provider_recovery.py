@@ -674,3 +674,29 @@ def test_till_course_import_updates_by_package_code(platform, tenant):
     with app.app_context():
         rows = p.platform_query_all("select amount from web_offers where tenant=?", (business,))
         assert [row["amount"] for row in rows] == [3250]
+
+
+def test_backoffice_minutes_are_credited_once_for_new_and_saved_events(platform, tenant):
+    import json
+
+    app, p = platform
+    business, _, terminal, headers = tenant
+    body = sale(terminal, event_id="new-topup")
+    payload = body["events"][0]["payload"]
+    payload.update(transaction_type="minutes_topup", minutes=15, minutes_included=0)
+    for _ in range(2):
+        assert app.test_client().post("/v1/sync/events/push", json=body, headers=headers).status_code == 200
+    saved = {"transaction_type": "minutes_topup", "customer_id": 123,
+             "notes": "Back office minutes top-up: 20 mins"}
+    with app.app_context():
+        p.platform_execute(
+            "insert into cloud_sync_events (business_account_public_id,terminal_device_public_id,local_event_id,event_type,occurred_at,payload_json) values (?,?,?,'transaction.completed',?,?)",
+            (business, terminal, "old-topup", p.now_utc_text(), json.dumps(saved)),
+        )
+        for _ in range(2):
+            p.restore_synced_topups()
+        customer = p.make_cloud_customer_public_id(business, 123)
+        summary = p.platform_query_one("select minutes_available from cloud_customer_minute_summary where customer_public_id=?", (customer,))
+        assert summary["minutes_available"] == 35
+        ledger = p.platform_query_all("select delta_minutes from cloud_customer_minute_ledger where customer_public_id=? and entry_type='backoffice_topup' order by id", (customer,))
+        assert [row["delta_minutes"] for row in ledger] == [15, 20]

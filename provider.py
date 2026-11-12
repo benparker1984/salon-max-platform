@@ -1126,6 +1126,51 @@ def ensure_cloud_customer_minute_summary(db, business_account_public_id: str, cu
     return row
 
 
+def backoffice_topup_minutes(payload):
+    minutes = str(payload.get("minutes") or payload.get("minutes_included") or "").strip()
+    if not minutes:
+        match = re.fullmatch(r"Back office minutes top-up: ([0-9]{1,9}) mins", str(payload.get("notes") or "").strip())
+        minutes = match[1] if match else ""
+    return int(minutes) if re.fullmatch(r"[0-9]{1,9}", minutes) else 0
+
+
+def restore_synced_topups():
+    db = get_platform_db()
+    rows = db.execute("""
+        select e.* from cloud_sync_events e
+        where e.event_type='transaction.completed' and e.payload_json like '%minutes_topup%'
+          and not exists (
+            select 1 from cloud_customer_minute_ledger l
+            where l.business_account_public_id=e.business_account_public_id
+              and l.terminal_device_public_id=e.terminal_device_public_id
+              and l.source_event_id=e.local_event_id
+          )
+        order by e.business_account_public_id, e.id
+    """).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"])
+        except (TypeError, ValueError):
+            continue
+        if (not isinstance(payload, dict) or str(payload.get("transaction_type") or "").strip() != "minutes_topup"
+                or not payload.get("customer_id") or not backoffice_topup_minutes(payload)):
+            continue
+        business = row["business_account_public_id"]
+        device = row["terminal_device_public_id"]
+        event = row["local_event_id"]
+        if hasattr(db, "raw"):
+            db.raw.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (business,))
+        if not db.execute("""
+            select 1 from cloud_customer_minute_ledger where business_account_public_id=?
+            and terminal_device_public_id=? and source_event_id=?
+        """, (business, device, event)).fetchone():
+            project_sync_event_to_ledgers(
+                db, business_account_public_id=business, terminal_device_public_id=device,
+                local_event_id=event, event_type=row["event_type"], occurred_at=row["occurred_at"], payload=payload,
+            )
+        db.commit()
+
+
 def project_sync_event_to_ledgers(
     db,
     *,
@@ -1139,7 +1184,16 @@ def project_sync_event_to_ledgers(
     if event_type != "transaction.completed" or not isinstance(payload, dict):
         return
 
-    customer_public_id = ensure_cloud_customer_from_event(db, business_account_public_id, payload)
+    transaction_type = str(payload.get("transaction_type") or "").strip()
+    customer_public_id = ""
+    if transaction_type == "minutes_topup" and str(payload.get("customer_id") or "").strip():
+        candidate = make_cloud_customer_public_id(business_account_public_id, payload["customer_id"])
+        if db.execute("""
+            select 1 from cloud_customers where business_account_public_id=? and customer_public_id=?
+        """, (business_account_public_id, candidate)).fetchone():
+            customer_public_id = candidate
+    if not customer_public_id:
+        customer_public_id = ensure_cloud_customer_from_event(db, business_account_public_id, payload)
     if not customer_public_id:
         return
 
@@ -1153,12 +1207,14 @@ def project_sync_event_to_ledgers(
     ).fetchone()
     site_public_id = str((terminal_row["site_public_id"] if terminal_row else "") or "")
     staff_user_public_id = cloud_staff_public_id_from_local(payload.get("staff_user_id"))
-    transaction_type = str(payload.get("transaction_type") or "").strip()
     transaction_number = str(payload.get("transaction_number") or "").strip()
     notes = str(payload.get("notes") or "").strip()
 
-    if transaction_type == "package_sale":
-        minutes_delta = int(payload.get("minutes_included") or 0)
+    if transaction_type in {"package_sale", "minutes_topup"}:
+        if transaction_type == "minutes_topup":
+            minutes_delta = backoffice_topup_minutes(payload)
+        else:
+            minutes_delta = int(payload.get("minutes_included") or 0)
         if minutes_delta > 0:
             summary_row = ensure_cloud_customer_minute_summary(db, business_account_public_id, customer_public_id)
             minutes_after = int(summary_row["minutes_available"] or 0) + minutes_delta
@@ -1189,7 +1245,7 @@ def project_sync_event_to_ledgers(
                     local_event_id,
                     transaction_number,
                     str(payload.get("package_product_id") or ""),
-                    "minutes_purchased",
+                    "backoffice_topup" if transaction_type == "minutes_topup" else "minutes_purchased",
                     minutes_delta,
                     minutes_after,
                     notes or str(payload.get("package_name") or "").strip(),

@@ -47,6 +47,7 @@ def initialise():
         with app.app_context():
             provider.init_db()
             recovery.restore(provider)
+            provider.restore_synced_topups()
             salon_web.init_schema()
             backoffice.init_schema()
             checkout.init_schema()
@@ -124,7 +125,7 @@ app.view_functions['dashboard'] = lambda: redirect(url_for('salonmax_owner_conso
 def healthz():
     row = provider.platform_query_one('select count(*) as count from platform_recovery_runs')
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
-                   release='salon-web-v8', recovery_applied=bool(row['count']))
+                   release='salon-web-v9', recovery_applied=bool(row['count']))
 
 
 @app.get('/platform/stats')
