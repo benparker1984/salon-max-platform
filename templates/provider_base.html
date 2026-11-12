@@ -238,8 +238,7 @@
                 <p>Internal operational layer for Salon Max owners. This sits above any individual salon and is where licences, customer businesses, site health, sync integrity, and support visibility should live.</p>
             </div>
             <div class="hero-meta">
-                <div class="label">Current Platform</div>
-                <div class="value">Salon Max</div>
+                <a class="button" href="{{ url_for('salonmax_platform_logout') }}">Sign out of owners platform</a>
             </div>
         </div>
         <nav class="nav">
@@ -252,7 +251,7 @@
             <a href="{{ url_for('salonmax_owner_diagnostics') }}">Diagnostics</a>
             <a href="{{ url_for('salonmax_owner_updates') }}">Updates</a>
             <a href="{{ url_for('commercial.overview') }}">Commercial Benchmarks</a>
-            <a href="/platform/estate-health">Estate Health</a><a href="/platform/export.json">Export</a><a href="/commissioning/platform">Commissioning</a><a href="{{ url_for('salonmax_platform_logout') }}">Sign Out</a>
+            <a href="/platform/estate-health">Estate Health</a><a href="/platform/export.json">Export</a><a href="/commissioning/platform">Commissioning</a>
         </nav>
         {% block content %}{% endblock %}
     </div>

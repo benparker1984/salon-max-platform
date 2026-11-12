@@ -209,6 +209,12 @@
 {% else %}<li>No paid online orders yet.</li>{% endfor %}</ul>
 <a href="{{ url_for('salon.dashboard', tenant=tenant) }}">Back to salon</a>
 {% elif mode == 'manage' %}
+{% if request.endpoint in ('salon.provision_owner', 'salon.provision_customers') %}
+<nav class="customer-nav" aria-label="Owners platform">
+<a href="{{ url_for('salonmax_owner_business_detail', business_account_public_id=tenant) }}">Back to business record</a>
+<a href="{{ url_for('salonmax_platform_logout') }}">Sign out of owners platform</a>
+</nav>
+{% endif %}
 <h2>Web access</h2>
 {% if office_url(tenant) %}<p><a href="{{ office_url(tenant) }}">Open hosted back office</a></p>{% endif %}
 {% set customer_url = 'https://www.salonmax.co.uk' ~ url_for('salon.customer_login', tenant=tenant) %}
