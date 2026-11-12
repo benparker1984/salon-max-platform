@@ -78,7 +78,14 @@ def manage(tenant):
             p.platform_execute("insert into web_offers (tenant,offer_id,title,minutes,amount) values (?,?,?,?,?)",
                                (tenant, secrets.token_hex(16), title, minutes, amount))
         return redirect(url_for("checkout.manage", tenant=tenant), code=303)
-    return web.page(salon=salon, mode="offers", offers=offers(tenant), team_account=account)
+    sales = p.platform_query_all("""
+        select orders.paid_at, orders.minutes, orders.amount, offers.title
+        from web_orders orders left join web_offers offers
+          on offers.tenant=orders.tenant and offers.offer_id=orders.offer_id
+        where orders.tenant=? and orders.paid_at is not null
+        order by orders.paid_at desc,orders.order_id desc limit 50
+    """, (tenant,))
+    return web.page(salon=salon, mode="offers", offers=offers(tenant), sales=sales, team_account=account)
 
 
 @bp.post("/salon/<tenant>/buy")
@@ -110,7 +117,7 @@ def buy(tenant):
         "mode": "payment",
         "payment_method_types[0]": "card",
         "success_url": portal + "?checkout=returned",
-        "cancel_url": portal,
+        "cancel_url": "https://www.salonmax.co.uk" + url_for("salon.dashboard", tenant=tenant, section="top-up"),
         "metadata[order_id]": order_id,
         "line_items[0][quantity]": 1,
         "line_items[0][price_data][currency]": "gbp",

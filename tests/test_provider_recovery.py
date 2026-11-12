@@ -574,8 +574,18 @@ def test_customer_claim_and_tanning_history(platform, tenant, monkeypatch):
     assert browser.post(link, data={"csrf": csrf, "password": password}).status_code == 303
     assert browser.post(link, data={"csrf": csrf, "password": password}).status_code == 404
     result = browser.post(login, data={"csrf": csrf, "login": email, "password": password}, follow_redirects=True)
-    assert b"17 minutes" in result.data
-    assert b"29 minutes" not in result.data
+    assert b"Top up now" in result.data
+    with app.app_context():
+        p.platform_execute("insert into web_offers (tenant,offer_id,title,minutes,amount) values (?,?,?,?,?)",
+                           (business, "course", "Salon course", 30, 1250))
+        p.platform_execute("insert into web_offers (tenant,offer_id,title,minutes,amount) values (?,?,?,?,?)",
+                           ("other-" + business, "course", "Other salon course", 30, 2000))
+    catalogue = browser.get(login + "/top-up")
+    assert b"Salon course" in catalogue.data and b"12.50" in catalogue.data
+    assert b"Other salon course" not in catalogue.data
+    history = browser.get(login + "/history")
+    assert b"17 minutes" in history.data
+    assert b"29 minutes" not in history.data
 
 
 def test_salon_issues_customer_code_for_existing_account(platform, tenant):

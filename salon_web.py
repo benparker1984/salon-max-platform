@@ -523,12 +523,13 @@ def authenticate(tenant, login_name, role, password):
     return True
 
 
-@bp.get("/salon/<tenant>/")
-def dashboard(tenant):
+@bp.get("/salon/<tenant>/", defaults={"section": None})
+@bp.get('/salon/<tenant>/customer/<any("top-up",history):section>')
+def dashboard(tenant, section):
     salon = tenant_record(tenant)
     if not session.get("salon_account"):
         return redirect(url_for("salon.customer_login", tenant=tenant))
-    account = member(tenant, ROLES)
+    account = member(tenant, {"customer"} if section else ROLES)
     if account["role"] in TEAM:
         from backoffice import office_url
         address = office_url(tenant)
@@ -553,16 +554,17 @@ def dashboard(tenant):
             abort(403)
         minutes = row["minutes_available"] or 0
         customer_id = account["customer_id"]
-        history = p.platform_query_all("""
-            select created_at, entry_type, delta_minutes, minutes_after
-            from cloud_customer_minute_ledger where business_account_public_id=? and customer_public_id=?
-            order by created_at desc,id desc limit 50
-        """, (tenant, customer_id))
-        sessions = tanning_history(tenant, customer_id)
+        if section == "history":
+            history = p.platform_query_all("""
+                select created_at, entry_type, delta_minutes, minutes_after
+                from cloud_customer_minute_ledger where business_account_public_id=? and customer_public_id=?
+                order by created_at desc,id desc limit 50
+            """, (tenant, customer_id))
+            sessions = tanning_history(tenant, customer_id)
     from checkout import configured, offers
     return page(salon=salon, mode="dashboard", account=account, minutes=minutes, history=history, sessions=sessions,
-                offers=offers(tenant) if minutes is not None else [],
-                checkout_enabled=minutes is not None and configured(tenant))
+                customer_section=section, offers=offers(tenant) if section == "top-up" else [],
+                checkout_enabled=section == "top-up" and configured(tenant))
 
 
 def tanning_history(tenant, customer_id):

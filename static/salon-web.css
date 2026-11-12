@@ -9,3 +9,10 @@ input, select, button { box-sizing: border-box; width: 100%; padding: .75rem; bo
 button { background: #6ee7f7; color: #101c2c; font-weight: 700; cursor: pointer; }
 @media (max-width: 42rem) { main { margin: 1rem; } }
 .checkbox { width: auto; } textarea { font: inherit; }
+
+.customer-nav { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.customer-nav a { padding: .55rem .75rem; border: 1px solid #52647c; border-radius: .5rem; text-decoration: none; }
+.customer-nav [aria-current="page"] { background: #6ee7f7; color: #101c2c; }
+.course { border: 1px solid #52647c; border-radius: .5rem; padding: 1rem; margin: 1rem 0; }
+.course h3 { margin-top: 0; }
+.course form { margin-bottom: 0; }
