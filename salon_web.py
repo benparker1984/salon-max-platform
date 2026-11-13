@@ -642,8 +642,14 @@ def dashboard(tenant, section):
             """, (tenant, customer_id))
             sessions = tanning_history(tenant, customer_id)
     from checkout import configured, offers
+    course_orders = p.platform_query_all("""
+        select o.minutes,o.amount,o.paid_at,w.title from web_orders o
+        join web_offers w on w.tenant=o.tenant and w.offer_id=o.offer_id
+        where o.tenant=? and o.customer_id=? and (o.stripe_account='' or o.paid_at is not null)
+        order by o.paid_at desc, o.order_id limit 50
+    """, (tenant, account["customer_id"])) if section == "top-up" else []
     return page(salon=salon, mode="dashboard", account=account, minutes=minutes, history=history, sessions=sessions,
-                customer_section=section, details=details, offers=offers(tenant) if section == "top-up" else [],
+                customer_section=section, details=details, course_orders=course_orders, offers=offers(tenant) if section == "top-up" else [],
                 checkout_enabled=section == "top-up" and configured(tenant))
 
 

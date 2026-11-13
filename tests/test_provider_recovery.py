@@ -795,3 +795,35 @@ def test_course_sync_replaces_test_catalogue_and_propagates_owner_edits(platform
     assert (current["title"], current["amount"], current["validity_days"]) == ("Updated package", 3250, 90)
     assert till.post(path, data={"csrf": "course-sync", "retire": "till:PKG30"}).status_code == 303
     assert till.get("/v1/courses", headers=headers).json["courses"][0]["active"] == 0
+
+def test_pay_at_salon_credits_once_and_reaches_till(platform, tenant, monkeypatch):
+    app, p = platform
+    business, _, terminal, headers = tenant
+    monkeypatch.delenv("SALONMAX_STRIPE_ACCOUNTS", raising=False)
+    assert app.test_client().post("/v1/sync/events/push", json=sale(terminal), headers=headers).status_code == 200
+    customer_id = p.make_cloud_customer_public_id(business, 123)
+    customer, owner = uuid.uuid4().hex, uuid.uuid4().hex
+    with app.app_context():
+        p.platform_execute("insert into web_offers (tenant,offer_id,title,minutes,amount) values (?,'test','45 minute course',45,4500)", (business,))
+        p.platform_execute("insert into web_accounts (account_id,tenant,login,role,customer_id) values (?,?,'customer','customer',?)", (customer,business,customer_id))
+        p.platform_execute("insert into web_accounts (account_id,tenant,login,role) values (?,?,'owner','owner')", (owner,business))
+    def signed_in(account):
+        browser = app.test_client()
+        with browser.session_transaction() as state:
+            state["salon_account"], state["salon_csrf"] = account, "order-test"
+        return browser
+    buyer, manager = signed_in(customer), signed_in(owner)
+    for _ in range(2):
+        assert buyer.post(f"/salon/{business}/buy", data={"csrf":"order-test","offer_id":"test"}).status_code == 303
+    portal = f"/salon/{business}/customer/top-up"
+    assert b"30 available" in buyer.get(portal).data
+    with app.app_context():
+        orders = p.platform_query_all("select order_id from web_orders where tenant=?", (business,))
+    assert len(orders) == 1
+    form = {"csrf":"order-test","confirm_paid":orders[0]["order_id"]}
+    assert buyer.post(f"/salon/{business}/offers", data=form).status_code == 403
+    for _ in range(2):
+        assert manager.post(f"/salon/{business}/offers", data=form).status_code == 303
+    assert b"75 available" in buyer.get(portal).data
+    entries = app.test_client().get("/v1/customers/corrections", headers=headers).json["data"]["minute_entries"]
+    assert [(entry["customer_number"],entry["delta_minutes"],entry["entry_type"]) for entry in entries] == [("123",45,"web_purchase")]

@@ -2900,7 +2900,7 @@ def cloud_customer_correction_snapshot(business_account_public_id: str, *, since
          and customers.customer_public_id = ledger.customer_public_id
         where ledger.business_account_public_id = ?
           and ledger.id > ?
-          and ledger.entry_type in ('manual_credit', 'refund_credit', 'manual_debit', 'reversal_debit')
+          and ledger.entry_type in ('manual_credit', 'refund_credit', 'manual_debit', 'reversal_debit', 'web_purchase')
         order by ledger.id
         """,
         (business_account_public_id, int(since_minute_ledger_id)),

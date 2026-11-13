@@ -48,6 +48,8 @@ def init_schema():
     if "validity_days" not in columns:
         db.execute("alter table web_offers add column validity_days integer not null default 365")
     db.execute("create table if not exists till_course_sync (tenant text primary key)")
+    db.execute("""create unique index if not exists one_pending_salon_order
+        on web_orders (tenant,customer_id,offer_id) where stripe_account='' and paid_at is null""")
     db.commit()
 
 
@@ -112,6 +114,16 @@ def manage(tenant):
     account = web.member(tenant, {"owner"})
     if request.method == "POST":
         web.verify_csrf()
+        if request.form.get("confirm_paid"):
+            db = p.get_platform_db()
+            order = db.execute("""
+                select * from web_orders where tenant=? and order_id=? and stripe_account=''
+            """, (tenant, request.form["confirm_paid"])).fetchone()
+            if not order:
+                abort(404)
+            credit_order(db, order)
+            flash("Payment recorded and minutes credited.", "courses")
+            return redirect(url_for("checkout.manage", tenant=tenant), code=303)
         offer_id = request.form.get("retire")
         edit_id = request.form.get("edit")
         if request.form.get("action") == "import-till-courses":
@@ -149,7 +161,15 @@ def manage(tenant):
         where orders.tenant=? and orders.paid_at is not null
         order by orders.paid_at desc,orders.order_id desc limit 50
     """, (tenant,))
-    return web.page(salon=salon, mode="offers", offers=offers(tenant), sales=sales, team_account=account)
+    pending = p.platform_query_all("""
+        select o.order_id,o.minutes,o.amount,c.first_name,c.last_name,c.customer_number,w.title
+        from web_orders o join cloud_customers c
+          on c.business_account_public_id=o.tenant and c.customer_public_id=o.customer_id
+        join web_offers w on w.tenant=o.tenant and w.offer_id=o.offer_id
+        where o.tenant=? and o.stripe_account='' and o.paid_at is null
+        order by o.order_id
+    """, (tenant,))
+    return web.page(salon=salon, mode="offers", pending=pending, offers=offers(tenant), sales=sales, team_account=account)
 
 
 def import_till_courses(tenant, raw):
@@ -209,9 +229,14 @@ def buy(tenant):
         abort(404)
     connected = stripe_account(tenant)
     secret = os.environ.get("SALONMAX_STRIPE_SECRET_KEY")
-    if not connected or not secret or not os.environ.get("SALONMAX_STRIPE_WEBHOOK_SECRET"):
-        abort(503, "Online checkout is not configured for this salon.")
     order_id = secrets.token_hex(24)
+    if not configured(tenant):
+        p.platform_execute("""
+            insert into web_orders (order_id,tenant,customer_id,stripe_account,offer_id,minutes,amount)
+            values (?,?,?,'',?,?,?) on conflict do nothing
+        """, (order_id, tenant, customer["customer_public_id"], offer["offer_id"], offer["minutes"], offer["amount"]))
+        flash("Course requested. Pay at the salon. Your minutes will appear after the salon confirms payment.", "course-order")
+        return redirect(url_for("salon.dashboard", tenant=tenant, section="top-up"), code=303)
     p.platform_execute("""
         insert into web_orders (order_id,tenant,customer_id,stripe_account,offer_id,minutes,amount)
         values (?,?,?,?,?,?,?)
@@ -271,12 +296,24 @@ def webhook():
     order = db.execute("select * from web_orders where order_id=?", (order_id,)).fetchone()
     if not order:
         return "", 204
+    if not order["stripe_account"]:
+        abort(400)
     if (checkout.get("currency") != "gbp" or checkout.get("amount_total") != order["amount"]
             or event.get("account") != order["stripe_account"]):
         abort(400)
-    tenant, customer = order["tenant"], order["customer_id"]
+    credit_order(db, order)
+    return "", 204
+
+
+def credit_order(db, order):
+    tenant, customer, order_id = order["tenant"], order["customer_id"], order["order_id"]
     if postgres():
         db.raw.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (tenant,))
+    if not db.execute("""
+        select 1 from cloud_customers
+        where business_account_public_id=? and customer_public_id=? and status='active'
+    """, (tenant, customer)).fetchone():
+        abort(409, "The linked salon account is inactive.")
     now = p.now_utc_text()
     claimed = db.execute("update web_orders set paid_at=? where order_id=? and paid_at is null", (now, order_id))
     if claimed.rowcount == 1:
@@ -295,4 +332,3 @@ def webhook():
             where business_account_public_id=? and customer_public_id=?
         """, (after, now, tenant, customer))
     db.commit()
-    return "", 204
