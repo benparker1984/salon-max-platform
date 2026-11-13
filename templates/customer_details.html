@@ -1,9 +1,13 @@
 <h2>Your details</h2>
 <dl>
     <dt>Full name</dt><dd>{{ details.full_name or 'Not on file' }}</dd>
-    <dt>Email</dt><dd>{{ details.email }}</dd>
+    <dt>Email</dt><dd>{{ details.email or 'Not on file' }}</dd>
     <dt>Phone</dt><dd>{{ details.phone or 'Not on file' }}</dd>
+    {% if details.login_email %}
+    <dt>Sign-in email</dt><dd>{{ details.login_email }}</dd>
+    <dt>Date of birth</dt><dd>{{ details.birthday or 'Not on file' }}</dd>
+    {% endif %}
     <dt>Address</dt>
-    <dd>{% if details.address_line %}{{ details.address_line }}, {{ details.town }}, {{ details.postcode }}{% else %}Not on file{% endif %}</dd>
+    <dd>{% if details.postal_address %}{{ details.postal_address }}{% elif details.address_line %}{{ details.address_line }}, {{ details.town }}, {{ details.postcode }}{% else %}Not on file{% endif %}</dd>
     {% if details.account_number %}<dt>Salon account number</dt><dd>{{ details.account_number }}</dd>{% endif %}
 </dl>

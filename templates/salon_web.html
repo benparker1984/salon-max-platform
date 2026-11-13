@@ -107,6 +107,21 @@
 </nav>
 {% if not customer_section %}
 {% include 'customer_details.html' %}
+{% for message in get_flashed_messages(category_filter=['profile']) %}<p role="status">{{ message }}</p>{% endfor %}
+<details>
+<summary>Edit customer details</summary>
+<form method="post" action="{{ url_for('salon.edit_customer_details', tenant=tenant) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="profile_version" value="{{ details.profile_synced_at }}">
+<label>First name<input name="first_name" maxlength="100" value="{{ details.first_name }}" required></label>
+<label>Last name<input name="last_name" maxlength="100" value="{{ details.last_name }}" required></label>
+<label>Date of birth<input type="date" name="birthday" value="{{ details.birthday }}"></label>
+<label>Contact email<input type="email" name="email" maxlength="254" value="{{ details.email }}"></label>
+<label>Phone<input type="tel" name="phone" maxlength="50" value="{{ details.phone }}"></label>
+<label>Postal address<textarea name="postal_address" maxlength="500">{{ details.postal_address }}</textarea></label>
+<button>Save customer details</button>
+</form>
+</details>
 <a href="{{ url_for('marketing.preferences', tenant=tenant) }}">Marketing preferences</a>
 {% if request.args.get('checkout') == 'returned' %}<p>Payment confirmation may take a moment. Refresh to check your minutes.</p>{% endif %}
 {% elif customer_section == 'top-up' %}

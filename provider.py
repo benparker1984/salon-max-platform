@@ -565,6 +565,10 @@ def ensure_platform_sync_tables():
         )
         """
     )
+    profile_columns = {row["name"] for row in db.execute("select * from pragma_table_info('cloud_customers')")}
+    for column in ("birthday", "postal_address", "profile_synced_at"):
+        if column not in profile_columns:
+            db.execute(f"alter table cloud_customers add column {column} text not null default ''")
     db.execute(
         """
         create table if not exists cloud_customer_balance_ledger (
@@ -1048,7 +1052,7 @@ def ensure_cloud_customer_from_event(db, business_account_public_id: str, payloa
                 phone = ?,
                 email = ?,
                 updated_at = current_timestamp
-            where customer_public_id = ?
+            where customer_public_id = ? and profile_synced_at = ''
             """,
             (
                 customer_number,

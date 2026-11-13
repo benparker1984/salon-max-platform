@@ -679,7 +679,7 @@ def test_customer_can_request_link_and_keep_existing_minutes(platform, tenant):
     assert admin.post(manage, data=form).status_code == 303
     assert admin.post(manage, data=form).status_code == 303
     overview = browser.get(f"/salon/{business}/").data
-    for value in (b"30 available", b"Link Test", b"1 Test Street", b"01234567890", b"link-test@example.invalid"):
+    for value in (b"30 available", b"Verification", b"1 Test Street", b"01234567890", b"link-test@example.invalid"):
         assert value in overview
 
 
@@ -729,3 +729,41 @@ def test_backoffice_minutes_are_credited_once_for_new_and_saved_events(platform,
         assert summary["minutes_available"] == 35
         ledger = p.platform_query_all("select delta_minutes from cloud_customer_minute_ledger where customer_public_id=? and entry_type='backoffice_topup' order by id", (customer,))
         assert [row["delta_minutes"] for row in ledger] == [15, 20]
+
+def test_shared_profile_edit_and_till_sync(platform, tenant):
+    app, p = platform
+    business, _, terminal, headers = tenant
+    customer_id = p.make_cloud_customer_public_id(business, 123)
+    till = app.test_client()
+    assert till.post("/v1/sync/events/push", json=sale(terminal), headers=headers).status_code == 200
+    path = "/v1/customers/profiles"
+    assert till.get(path).status_code == 403
+    account_id = uuid.uuid4().hex
+    with app.app_context():
+        p.platform_execute("""insert into web_accounts (account_id,tenant,login,role,customer_id)
+                              values (?,?,'signin@example.invalid','customer',?)""",
+                           (account_id, business, customer_id))
+    browser = app.test_client()
+    with browser.session_transaction() as state:
+        state["salon_account"] = account_id
+        state["salon_csrf"] = "profile-test"
+    try:
+        update = {"event_id": "profile_" + uuid.uuid4().hex, "customer_number": "123",
+                  "changes": {"first_name": "Till name", "last_name": "Customer", "birthday": "2000-05-12",
+                              "email": "contact@example.invalid", "postal_address": "2 Test Street"}}
+        assert till.post(path, json=update, headers=headers).status_code == 200
+        page = browser.get(f"/salon/{business}/").data
+        for value in (b"Till name Customer", b"2000-05-12", b"contact@example.invalid", b"30 available"):
+            assert value in page
+        version = till.get(path, headers=headers).json["profiles"][0]["profile_synced_at"]
+        form = {"csrf": "profile-test", "profile_version": version, "first_name": "Portal name", "email": ""}
+        assert browser.post(f"/salon/{business}/customer/details", data=form).status_code == 303
+        assert till.post(path, json=update, headers=headers).status_code == 200
+        assert till.post("/v1/sync/events/push", json=sale(terminal, "later-sale"), headers=headers).status_code == 200
+        row = till.get(path, headers=headers).json["profiles"][0]
+        assert row["first_name"] == "Portal name" and row["email"] == ""
+        assert row["birthday"] == "2000-05-12"
+        assert b"60 available" in browser.get(f"/salon/{business}/").data
+    finally:
+        with app.app_context():
+            p.platform_execute("delete from web_accounts where account_id=?", (account_id,))

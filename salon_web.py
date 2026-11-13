@@ -13,6 +13,7 @@ from flask import Blueprint, abort, flash, jsonify, make_response, redirect, ren
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import provider as p
+from customer_profiles import save_profile, ProfileError
 
 bp = Blueprint("salon", __name__)
 TEAM = {"owner", "staff"}
@@ -328,6 +329,21 @@ def link_customer_record(tenant):
         db.rollback()
         flash("Choose an active salon account that is not already linked.", "customer-link")
         return
+    registration = db.execute("""
+        select p.address_line,p.town,p.postcode,p.phone,a.login
+        from web_customer_profiles p join web_accounts a on a.tenant=p.tenant and a.account_id=p.account_id
+        where p.tenant=? and p.account_id=?
+    """, (tenant, account_id)).fetchone()
+    current = db.execute("""
+        select postal_address,phone,email from cloud_customers
+        where business_account_public_id=? and customer_public_id=?
+    """, (tenant, customer_id)).fetchone()
+    candidates = {"postal_address": ", ".join(registration[k] for k in ("address_line", "town", "postcode")
+                                               if registration[k]),
+                  "phone": registration["phone"], "email": registration["login"]}
+    changes = {key: value for key, value in candidates.items() if value and not current[key]}
+    if changes:
+        save_profile(db, tenant, customer_id, changes)
     db.commit()
     flash("Customer account linked. Their existing minutes are now visible online.", "customer-link")
 
@@ -557,6 +573,25 @@ def authenticate(tenant, login_name, role, password):
     return True
 
 
+@bp.post("/salon/<tenant>/customer/details")
+def edit_customer_details(tenant):
+    tenant_record(tenant)
+    account = member(tenant, {"customer"})
+    verify_csrf()
+    if not account["customer_id"]:
+        abort(403)
+    db = p.get_platform_db()
+    try:
+        save_profile(db, tenant, account["customer_id"], request.form,
+                     expected=request.form.get("profile_version", ""))
+        db.commit()
+        flash("Customer details saved.", "profile")
+    except ProfileError as error:
+        db.rollback()
+        flash(str(error), "profile")
+    return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
+
+
 @bp.get("/salon/<tenant>/", defaults={"section": None})
 @bp.get('/salon/<tenant>/customer/<any("top-up",history):section>')
 def dashboard(tenant, section):
@@ -583,6 +618,7 @@ def dashboard(tenant, section):
                         details={**dict(profile), "email": account["login"]})
         row = p.platform_query_one("""
             select c.first_name,c.last_name,c.phone,c.account_number,c.customer_number,
+                   c.birthday,c.postal_address,c.email,c.profile_synced_at,
                    m.minutes_available
             from cloud_customers c left join cloud_customer_minute_summary m
             on m.business_account_public_id=c.business_account_public_id and m.customer_public_id=c.customer_public_id
@@ -592,12 +628,9 @@ def dashboard(tenant, section):
             abort(403)
         minutes = row["minutes_available"]
         details = {
-            **(dict(profile) if profile else {}),
-            "full_name": profile["full_name"] if profile else " ".join(
-                name for name in (row["first_name"], row["last_name"]) if name
-            ),
-            "phone": (profile["phone"] if profile else "") or row["phone"],
-            "email": account["login"],
+            **dict(row),
+            "full_name": " ".join(name for name in (row["first_name"], row["last_name"]) if name),
+            "login_email": account["login"],
             "account_number": row["account_number"] or row["customer_number"],
         }
         customer_id = account["customer_id"]

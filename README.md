@@ -136,3 +136,13 @@ open SalonMax.xcodeproj. Set the signing team and validate account activation,
 sign-in, Stripe handoff, and return to the portal on an iPhone. Before submission,
 supply the final app icon and privacy details and assess App Review minimum
 functionality and account deletion requirements. The wrapper source is unsigned.
+
+## Shared salon settings
+
+A change to a shared setting must reach every location of that salon. Each
+setting has one shared record and edits from any supported interface update
+that record. Locations that lose connectivity retain pending edits and catch
+up when they reconnect. Retries must be safe, stale data must not silently
+replace newer edits, and each sync path must be verified in both directions.
+Apply this rule to new settings and when replacing existing local-only
+settings. The customer profile path is the first implementation of this rule.
