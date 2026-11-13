@@ -678,7 +678,9 @@ def test_customer_can_request_link_and_keep_existing_minutes(platform, tenant):
     form["verified"] = "yes"
     assert admin.post(manage, data=form).status_code == 303
     assert admin.post(manage, data=form).status_code == 303
-    assert b"30 available" in browser.get(f"/salon/{business}/").data
+    overview = browser.get(f"/salon/{business}/").data
+    for value in (b"30 available", b"Link Test", b"1 Test Street", b"01234567890", b"link-test@example.invalid"):
+        assert value in overview
 
 
 def test_till_course_import_updates_by_package_code(platform, tenant):

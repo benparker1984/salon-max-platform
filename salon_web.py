@@ -572,21 +572,34 @@ def dashboard(tenant, section):
     minutes = None
     history = []
     sessions = []
+    details = None
     if account["role"] == "customer":
         profile = p.platform_query_one("""
-            select requested_at from web_customer_profiles
-            where tenant=? and account_id=? and linked_at is null
+            select full_name,address_line,town,postcode,phone,requested_at,linked_at
+            from web_customer_profiles where tenant=? and account_id=?
         """, (tenant, account["account_id"]))
-        if profile:
-            return page(salon=salon, mode="customer-unlinked", requested=bool(profile["requested_at"]))
+        if profile and not profile["linked_at"]:
+            return page(salon=salon, mode="customer-unlinked", requested=bool(profile["requested_at"]),
+                        details={**dict(profile), "email": account["login"]})
         row = p.platform_query_one("""
-            select m.minutes_available from cloud_customers c left join cloud_customer_minute_summary m
+            select c.first_name,c.last_name,c.phone,c.account_number,c.customer_number,
+                   m.minutes_available
+            from cloud_customers c left join cloud_customer_minute_summary m
             on m.business_account_public_id=c.business_account_public_id and m.customer_public_id=c.customer_public_id
             where c.business_account_public_id=? and c.customer_public_id=? and c.status='active'
         """, (tenant, account["customer_id"]))
         if not row:
             abort(403)
-        minutes = row["minutes_available"] or 0
+        minutes = row["minutes_available"]
+        details = {
+            **(dict(profile) if profile else {}),
+            "full_name": profile["full_name"] if profile else " ".join(
+                name for name in (row["first_name"], row["last_name"]) if name
+            ),
+            "phone": (profile["phone"] if profile else "") or row["phone"],
+            "email": account["login"],
+            "account_number": row["account_number"] or row["customer_number"],
+        }
         customer_id = account["customer_id"]
         if section == "history":
             history = p.platform_query_all("""
@@ -597,7 +610,7 @@ def dashboard(tenant, section):
             sessions = tanning_history(tenant, customer_id)
     from checkout import configured, offers
     return page(salon=salon, mode="dashboard", account=account, minutes=minutes, history=history, sessions=sessions,
-                customer_section=section, offers=offers(tenant) if section == "top-up" else [],
+                customer_section=section, details=details, offers=offers(tenant) if section == "top-up" else [],
                 checkout_enabled=section == "top-up" and configured(tenant))
 
 

@@ -1,0 +1,9 @@
+<h2>Your details</h2>
+<dl>
+    <dt>Full name</dt><dd>{{ details.full_name or 'Not on file' }}</dd>
+    <dt>Email</dt><dd>{{ details.email }}</dd>
+    <dt>Phone</dt><dd>{{ details.phone or 'Not on file' }}</dd>
+    <dt>Address</dt>
+    <dd>{% if details.address_line %}{{ details.address_line }}, {{ details.town }}, {{ details.postcode }}{% else %}Not on file{% endif %}</dd>
+    {% if details.account_number %}<dt>Salon account number</dt><dd>{{ details.account_number }}</dd>{% endif %}
+</dl>

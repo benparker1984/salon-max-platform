@@ -40,6 +40,7 @@
 <p><a href="{{ url_for('salon.customer_login', tenant=tenant) }}">Back to sign in</a></p>
 {% elif mode == 'customer-unlinked' %}
 <h2>Your salon account</h2>
+{% include 'customer_details.html' %}
 {% if requested %}
 <p>Your request is with the salon. Once they confirm the match, your existing minutes and history will appear here.</p>
 {% else %}
@@ -97,13 +98,15 @@
 {% endif %}
 {% elif mode == 'dashboard' %}
 {% if account.role == 'customer' %}
-<h2>Your minutes</h2><p>{{ minutes }} available</p>
+<h2>Your minutes</h2>
+{% if minutes is none %}<p>No minute balance has synced yet.</p>{% else %}<p>{{ minutes }} available</p>{% endif %}
 <nav class="customer-nav" aria-label="Customer account">
 <a href="{{ url_for('salon.dashboard', tenant=tenant) }}" {% if not customer_section %}aria-current="page"{% endif %}>Overview</a>
 <a href="{{ url_for('salon.dashboard', tenant=tenant, section='top-up') }}" {% if customer_section == 'top-up' %}aria-current="page"{% endif %}>Top up now</a>
 <a href="{{ url_for('salon.dashboard', tenant=tenant, section='history') }}" {% if customer_section == 'history' %}aria-current="page"{% endif %}>Tanning history</a>
 </nav>
 {% if not customer_section %}
+{% include 'customer_details.html' %}
 <a href="{{ url_for('marketing.preferences', tenant=tenant) }}">Marketing preferences</a>
 {% if request.args.get('checkout') == 'returned' %}<p>Payment confirmation may take a moment. Refresh to check your minutes.</p>{% endif %}
 {% elif customer_section == 'top-up' %}
