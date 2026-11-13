@@ -12,7 +12,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-from flask import Blueprint, abort, flash, redirect, request, url_for
+from flask import Blueprint, abort, flash, g, jsonify, redirect, request, url_for
 
 import provider as p
 import salon_web as web
@@ -44,6 +44,10 @@ def init_schema():
             paid_at text
         );
     """)
+    columns = {row["name"] for row in db.execute("select * from pragma_table_info('web_offers')")}
+    if "validity_days" not in columns:
+        db.execute("alter table web_offers add column validity_days integer not null default 365")
+    db.execute("create table if not exists till_course_sync (tenant text primary key)")
     db.commit()
 
 
@@ -60,6 +64,48 @@ def offers(tenant):
     return p.platform_query_all("select * from web_offers where tenant=? and active=1 order by amount", (tenant,))
 
 
+@bp.route("/v1/courses", methods=["GET", "POST"])
+def sync_courses():
+    tenant = g.device_terminal["business_account_public_id"]
+    db = p.get_platform_db()
+    if request.method == "POST":
+        body = request.get_json()
+        changes = body.get("courses")
+        if not isinstance(changes, list) or len(changes) > 500:
+            abort(400, "Invalid course updates.")
+        if postgres():
+            db.raw.execute("select pg_advisory_xact_lock(hashtextextended(%s, 0))", (tenant,))
+        enrolled = db.execute("select 1 from till_course_sync where tenant=?", (tenant,)).fetchone()
+        if body.get("initial") is True and not enrolled:
+            db.execute("update web_offers set active=0 where tenant=?", (tenant,))
+            db.execute("insert into till_course_sync (tenant) values (?)", (tenant,))
+        for course in changes:
+            if not isinstance(course, dict):
+                abort(400, "Invalid course.")
+            code = course.get("code")
+            title = course.get("title")
+            if (not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", code)
+                    or not isinstance(title, str) or not title.strip() or len(title) > 80
+                    or any(type(course.get(field)) is not int or not low <= course[field] <= high
+                           for field, low, high in (("minutes", 1, 10000), ("amount", 1, 100000),
+                                                    ("validity_days", 0, 36500), ("active", 0, 1)))):
+                abort(400, "Check the course code, name, minutes, price and validity.")
+            db.execute("""
+                insert into web_offers (tenant,offer_id,title,minutes,amount,validity_days,active)
+                values (?,?,?,?,?,?,?)
+                on conflict (tenant,offer_id) do update set title=excluded.title,
+                    minutes=excluded.minutes, amount=excluded.amount,
+                    validity_days=excluded.validity_days, active=excluded.active
+            """, (tenant, "till:" + code, title, course["minutes"], course["amount"],
+                  course["validity_days"], course["active"]))
+        db.commit()
+    rows = db.execute("""
+        select substr(offer_id,6) as code,title,minutes,amount,validity_days,active
+        from web_offers where tenant=? and offer_id like 'till:%' order by offer_id
+    """, (tenant,)).fetchall()
+    return jsonify(ok=True, courses=[dict(row) for row in rows])
+
+
 @bp.route("/salon/<tenant>/offers", methods=["GET", "POST"])
 def manage(tenant):
     salon = web.tenant_record(tenant)
@@ -67,6 +113,7 @@ def manage(tenant):
     if request.method == "POST":
         web.verify_csrf()
         offer_id = request.form.get("retire")
+        edit_id = request.form.get("edit")
         if request.form.get("action") == "import-till-courses":
             count = import_till_courses(tenant, request.form.get("courses", ""))
             flash(f"Imported {count} courses from the till list.", "courses")
@@ -77,12 +124,23 @@ def manage(tenant):
             try:
                 minutes = int(request.form.get("minutes", ""))
                 amount = int(request.form.get("amount", ""))
+                validity_days = int(request.form.get("validity_days", "365"))
             except ValueError:
                 abort(400, "Enter whole minutes and a price in pence.")
-            if not title or len(title) > 80 or not 1 <= minutes <= 10000 or not 30 <= amount <= 100000:
+            if not title or len(title) > 80 or not 1 <= minutes <= 10000 or not 30 <= amount <= 100000 or not 0 <= validity_days <= 36500:
                 abort(400, "Check the package name, minutes and price.")
-            p.platform_execute("insert into web_offers (tenant,offer_id,title,minutes,amount) values (?,?,?,?,?)",
-                               (tenant, secrets.token_hex(16), title, minutes, amount))
+            db = p.get_platform_db()
+            enrolled = db.execute("select 1 from till_course_sync where tenant=?", (tenant,)).fetchone()
+            if edit_id:
+                db.execute("""
+                    update web_offers set title=?,minutes=?,amount=?,validity_days=?
+                    where tenant=? and offer_id=? and active=1
+                """, (title, minutes, amount, validity_days, tenant, edit_id))
+            else:
+                code = ("till:WEB-" if enrolled else "") + secrets.token_hex(8)
+                db.execute("insert into web_offers (tenant,offer_id,title,minutes,amount,validity_days) values (?,?,?,?,?,?)",
+                           (tenant, code, title, minutes, amount, validity_days))
+            db.commit()
         return redirect(url_for("checkout.manage", tenant=tenant), code=303)
     sales = p.platform_query_all("""
         select orders.paid_at, orders.minutes, orders.amount, offers.title
@@ -116,17 +174,20 @@ def import_till_courses(tenant, raw):
                 or not 1 <= minutes <= 10000 or not 30 <= price <= 100000
                 or code in courses or len(courses) >= 100):
             abort(400, "Check the course details and use each package code once.")
-        courses[code] = (title, minutes, price)
+        validity = row[4].strip() if len(row) == 5 else "365"
+        if not validity.isdecimal() or not 0 <= int(validity) <= 36500:
+            abort(400, "Enter valid course days.")
+        courses[code] = (title, minutes, price, int(validity))
     if not courses:
         abort(400, "Paste at least one course.")
     db = p.get_platform_db()
-    for code, (title, minutes, price) in courses.items():
+    for code, (title, minutes, price, validity) in courses.items():
         db.execute("""
-            insert into web_offers (tenant,offer_id,title,minutes,amount)
-            values (?,?,?,?,?)
+            insert into web_offers (tenant,offer_id,title,minutes,amount,validity_days)
+            values (?,?,?,?,?,?)
             on conflict (tenant,offer_id) do update set title=excluded.title,
-                minutes=excluded.minutes, amount=excluded.amount
-        """, (tenant, "till:" + code, title, minutes, price))
+                minutes=excluded.minutes, amount=excluded.amount, validity_days=excluded.validity_days
+        """, (tenant, "till:" + code, title, minutes, price, validity))
     db.commit()
     return len(courses)
 

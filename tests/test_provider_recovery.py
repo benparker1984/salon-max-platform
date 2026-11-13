@@ -767,3 +767,31 @@ def test_shared_profile_edit_and_till_sync(platform, tenant):
     finally:
         with app.app_context():
             p.platform_execute("delete from web_accounts where account_id=?", (account_id,))
+
+def test_course_sync_replaces_test_catalogue_and_propagates_owner_edits(platform, tenant):
+    app, p = platform
+    business, _, _, headers = tenant
+    owner = uuid.uuid4().hex
+    with app.app_context():
+        p.platform_execute("insert into web_accounts (account_id,tenant,login,role) values (?,?,'owner','owner')",
+                           (owner, business))
+        p.platform_execute("insert into web_offers (tenant,offer_id,title,minutes,amount) values (?,'old','Test',30,32)",
+                           (business,))
+    till = app.test_client()
+    course = dict(code="PKG30", title="30 Minute Package", minutes=30, amount=3000, validity_days=365, active=1)
+    assert till.get("/v1/courses").status_code == 403
+    assert till.post("/v1/courses", headers=headers, json={"initial": True, "courses": [course]}).json["courses"] == [course]
+    with app.app_context():
+        from checkout import offers
+        assert [row["title"] for row in offers(business)] == [course["title"]]
+    with till.session_transaction() as state:
+        state["salon_account"] = owner
+        state["salon_csrf"] = "course-sync"
+    path = f"/salon/{business}/offers"
+    response = till.post(path, data={"csrf": "course-sync", "edit": "till:PKG30", "title": "Updated package",
+                                    "minutes": "30", "amount": "3250", "validity_days": "90"})
+    assert response.status_code == 303
+    current = till.get("/v1/courses", headers=headers).json["courses"][0]
+    assert (current["title"], current["amount"], current["validity_days"]) == ("Updated package", 3250, 90)
+    assert till.post(path, data={"csrf": "course-sync", "retire": "till:PKG30"}).status_code == 303
+    assert till.get("/v1/courses", headers=headers).json["courses"][0]["active"] == 0
