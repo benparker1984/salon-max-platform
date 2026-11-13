@@ -1133,9 +1133,9 @@ def ensure_cloud_customer_minute_summary(db, business_account_public_id: str, cu
 def backoffice_topup_minutes(payload):
     minutes = str(payload.get("minutes") or payload.get("minutes_included") or "").strip()
     if not minutes:
-        match = re.fullmatch(r"Back office minutes top-up: ([0-9]{1,9}) mins", str(payload.get("notes") or "").strip())
+        match = re.fullmatch(r"Back office minutes top-up: (-?[0-9]{1,9}) mins", str(payload.get("notes") or "").strip())
         minutes = match[1] if match else ""
-    return int(minutes) if re.fullmatch(r"[0-9]{1,9}", minutes) else 0
+    return int(minutes) if re.fullmatch(r"-?[0-9]{1,9}", minutes) else 0
 
 
 def restore_synced_topups():
@@ -1219,7 +1219,7 @@ def project_sync_event_to_ledgers(
             minutes_delta = backoffice_topup_minutes(payload)
         else:
             minutes_delta = int(payload.get("minutes_included") or 0)
-        if minutes_delta > 0:
+        if minutes_delta > 0 or (transaction_type == "minutes_topup" and minutes_delta < 0):
             summary_row = ensure_cloud_customer_minute_summary(db, business_account_public_id, customer_public_id)
             minutes_after = int(summary_row["minutes_available"] or 0) + minutes_delta
             db.execute(
