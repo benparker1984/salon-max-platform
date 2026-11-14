@@ -23,6 +23,19 @@
 {% endif %}
 {% if mode == 'choose' %}
 <form method="get"><label>Salon code<input name="code" required maxlength="100"></label><button>Open salon</button></form>
+{% elif mode == 'invite-customer-email' %}
+<h2>Invite {{ customer.first_name }} {{ customer.last_name }}</h2>
+<p>{{ invite_email or 'No email on file' }}</p>
+{% if invite_message %}<p role="status">{{ invite_message }}</p>{% endif %}
+{% if invite_link %}
+<p><a href="{{ mailto }}">Open invitation in your email app</a></p>
+<label>Private invitation link<input readonly value="{{ invite_link }}"></label>
+{% elif not invite_message and invite_email %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button>{{ 'Send email invitation' if email_enabled else 'Prepare email invitation' }}</button>
+</form>
+{% endif %}
 {% elif mode == 'customer-join' %}
 <h2>Create your online account</h2>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}

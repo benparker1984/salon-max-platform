@@ -831,3 +831,26 @@ def test_pay_at_salon_credits_once_and_reaches_till(platform, tenant, monkeypatc
     assert b"75 available" in buyer.get(portal).data
     entries = app.test_client().get("/v1/customers/corrections", headers=headers).json["data"]["minute_entries"]
     assert [(entry["customer_number"],entry["delta_minutes"],entry["entry_type"]) for entry in entries] == [("123",45,"web_purchase")]
+
+def test_customer_invite_requires_staff_and_updates_status(platform, tenant, monkeypatch):
+    app, p = platform
+    business, _, terminal, headers = tenant
+    browser = app.test_client()
+    assert browser.post("/v1/sync/events/push", json=sale(terminal), headers=headers).status_code == 200
+    customer_id = p.make_cloud_customer_public_id(business, 123)
+    staff = uuid.uuid4().hex
+    with app.app_context():
+        p.platform_execute("update cloud_customers set email='invite@example.test' where customer_public_id=?", (customer_id,))
+        p.platform_execute("insert into web_accounts (account_id,tenant,login,role) values (?,?,'staff@example.test','staff')", (staff,business))
+    path = f"/salon/{business}/customer-invite/123"
+    assert browser.get(path).status_code == 302
+    with browser.session_transaction() as state:
+        state["salon_team_sessions"] = {business: [staff, ""]}
+        state["salon_csrf"] = "invite-test"
+    monkeypatch.delenv("SALONMAX_TRANSACTIONAL_EMAIL_KEY", raising=False)
+    assert browser.post(path).status_code == 400
+    response = browser.post(path, data={"csrf": "invite-test"})
+    assert response.status_code == 200 and b"mailto:invite@example.test" in response.data
+    result = browser.get("/v1/customers/online-status", headers=headers)
+    assert result.json["statuses"]["123"]["status"] == "Awaiting setup"
+    assert browser.get("/v1/customers/online-status").status_code == 403

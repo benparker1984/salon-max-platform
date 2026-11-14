@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from flask import Blueprint, abort, flash, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Blueprint, abort, flash, g, jsonify, make_response, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import provider as p
@@ -455,6 +455,98 @@ def activate(tenant, token):
     return page(salon=salon, mode="activate", customer_only=row["role"] == "customer")
 
 
+@bp.get("/v1/customers/online-status")
+def customer_online_status():
+    tenant = g.device_terminal["business_account_public_id"]
+    rows = p.platform_query_all("""
+        select c.customer_number,c.email,
+            case when a.disabled=1 then 'Disabled'
+                 when a.password_hash is not null then 'Active'
+                 when a.invite_until>? then 'Awaiting setup'
+                 else 'No online account' end as status
+        from cloud_customers c left join web_accounts a
+          on a.tenant=c.business_account_public_id and a.customer_id=c.customer_public_id and a.role='customer'
+        where c.business_account_public_id=? and c.status='active'
+    """, (stamp(), tenant))
+    statuses = {}
+    for row in rows:
+        number = row["customer_number"]
+        statuses[number] = ({"status": "Check customer number", "can_invite": False} if number in statuses else
+                            {"status": row["status"], "can_invite": bool(row["email"] and row["status"] in
+                                                                         {"No online account", "Awaiting setup"})})
+    response = jsonify(tenant=tenant, statuses=statuses)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@bp.route("/salon/<tenant>/customer-invite/<number>", methods=["GET", "POST"])
+def invite_customer_email(tenant, number):
+    from backoffice import ORIGIN, valid_email
+    from urllib.parse import urlencode, quote
+
+    salon = tenant_record(tenant)
+    if not session.get("salon_team_sessions", {}).get(tenant):
+        session["customer_invite_return"] = [tenant, number]
+        return redirect(url_for("salon.login", tenant=tenant))
+    member(tenant, TEAM)
+    matches = p.platform_query_all("""
+        select customer_public_id,first_name,last_name,email from cloud_customers
+        where business_account_public_id=? and customer_number=? and status='active' limit 2
+    """, (tenant, number))
+    if len(matches) != 1:
+        abort(404, "The customer number must match one synced salon record.")
+    customer = matches[0]
+    email = customer["email"].strip().lower()
+    link = mailto = message = None
+    if request.method == "POST":
+        verify_csrf()
+        if not valid_email(email):
+            abort(400, "Save a valid customer email before inviting them.")
+        throttle(tenant, f"staff-customer-invite:{number}")
+        token = secrets.token_urlsafe(32)
+        db = p.get_platform_db()
+        db.execute("""
+            insert into web_accounts (account_id,tenant,login,role,customer_id)
+            values (?,?,?,'customer',?) on conflict do nothing
+        """, (secrets.token_hex(20), tenant, email, customer["customer_public_id"]))
+        changed = db.execute("""
+            update web_accounts set invite_hash=?,invite_until=?
+            where tenant=? and customer_id=? and login=? and role='customer'
+              and password_hash is null and disabled=0
+        """, (digest(token), stamp(86400), tenant, customer["customer_public_id"], email))
+        if changed.rowcount != 1:
+            db.rollback()
+            abort(409, "This customer or email already has an online account. Check their web access before inviting again.")
+        db.commit()
+        link = ORIGIN + url_for("salon.activate", tenant=tenant, token=token)
+        subject = f"{salon['business_name']} customer account"
+        body = f"Set up access to your salon account: {link}\n\nThis link expires in 24 hours."
+        if customer_email_enabled():
+            try:
+                send_customer_email(email, subject, body)
+                message = "Invitation submitted for email delivery."
+                link = None
+            except (URLError, TimeoutError):
+                message = "Automatic delivery failed. Send the invitation using your email app."
+        if link:
+            mailto = "mailto:" + quote(email, safe="@") + "?" + urlencode(
+                {"subject": subject, "body": body}, quote_via=quote)
+    return page(salon=salon, mode="invite-customer-email", customer=customer, invite_email=email,
+                invite_link=link, mailto=mailto, invite_message=message, email_enabled=customer_email_enabled())
+
+
+def send_customer_email(email, subject, body):
+    message = {"from": os.environ["SALONMAX_TRANSACTIONAL_EMAIL_FROM"],
+               "to": [email], "subject": subject, "text": body}
+    email_request = Request(
+        "https://api.resend.com/emails", json.dumps(message).encode(),
+        {"Authorization": "Bearer " + os.environ["SALONMAX_TRANSACTIONAL_EMAIL_KEY"],
+         "Content-Type": "application/json"},
+    )
+    with urlopen(email_request, timeout=8):
+        pass
+
+
 def customer_email_enabled():
     return bool(os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_KEY")
                 and os.environ.get("SALONMAX_TRANSACTIONAL_EMAIL_FROM"))
@@ -508,20 +600,9 @@ def customer_access(tenant, action):
             db.commit()
             if changed:
                 link = ORIGIN + url_for("salon.activate", tenant=tenant, token=token)
-                message = {
-                    "from": os.environ["SALONMAX_TRANSACTIONAL_EMAIL_FROM"],
-                    "to": [email],
-                    "subject": f"{salon['business_name']} customer account",
-                    "text": f"Choose your account password: {link}\n\nThis link expires in 30 minutes.",
-                }
-                email_request = Request(
-                    "https://api.resend.com/emails", json.dumps(message).encode(),
-                    {"Authorization": "Bearer " + os.environ["SALONMAX_TRANSACTIONAL_EMAIL_KEY"],
-                     "Content-Type": "application/json"},
-                )
                 try:
-                    with urlopen(email_request, timeout=8):
-                        pass
+                    send_customer_email(email, f"{salon['business_name']} customer account",
+                                        f"Choose your account password: {link}\n\nThis link expires in 30 minutes.")
                 except (URLError, TimeoutError):
                     p.app.logger.warning("Customer account email delivery failed")
         submitted = True
@@ -549,6 +630,9 @@ def sign_in(tenant, customer_only=False):
         if role not in ROLES or len(login_name) > 254 or len(password) > 128:
             abort(400)
         if authenticate(tenant, login_name, role, password):
+            pending = session.pop("customer_invite_return", None) if role in TEAM else None
+            if pending and pending[0] == tenant:
+                return redirect(url_for("salon.invite_customer_email", tenant=tenant, number=pending[1]), code=303)
             return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
         error = "The login details did not match."
     return page(salon=salon, mode="login", error=error, customer_only=customer_only)
