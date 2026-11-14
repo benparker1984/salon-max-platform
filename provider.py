@@ -2744,7 +2744,7 @@ def salonmax_platform_snapshot(business_account_public_id=None):
         "subscription_status": account_row["subscription_status"],
         "site_count": len(sites),
         "terminal_count": len(terminals),
-        "device_count": 0,
+        "device_count": estate_bed_count(business_account_public_id),
         "licence_count": len(licences),
         "active_licence_count": active_licence_count,
         "stale_licence_count": stale_licence_count,
@@ -4564,6 +4564,18 @@ def gpio_mapping_for_bed_number(bed_number: int):
         "trigger_output_pin": trigger_override_map.get(bed_number),
         "feedback_input_pin": feedback_override_map.get(bed_number, feedback_map.get(bed_number)),
     }
+
+
+def estate_bed_count(business):
+    return platform_query_one("""
+        select count(*) as total from (
+            select distinct i.site_id,i.bed_number from terminal_bed_inventory i
+            join cloud_business_sites s on s.business_account_public_id=i.business_id and s.site_public_id=i.site_id
+            join cloud_terminal_registry t on t.business_account_public_id=i.business_id
+                 and t.terminal_device_public_id=i.terminal_id and t.site_public_id=i.site_id
+            where i.business_id=? and s.status='active' and t.management_status<>'retired'
+        ) beds
+    """, (business,))["total"]
 
 
 def build_device_config_payload(terminal_device_id: str):

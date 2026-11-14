@@ -54,6 +54,10 @@ def initialise():
             backoffice.init_schema()
             checkout.init_schema()
             marketing.init_schema()
+            provider.platform_execute("""create table if not exists terminal_bed_inventory (
+                business_id text not null, site_id text not null, terminal_id text not null,
+                bed_number integer not null, primary key (business_id,site_id,terminal_id,bed_number)
+            )""")
             app.config['PLATFORM_SCHEMA_READY'] = True
             commissioning.init_db()
             commissioning.ensure_column('sites', 'recovered_public_id', "text not null default ''")
@@ -127,7 +131,7 @@ app.view_functions['dashboard'] = lambda: redirect(url_for('salonmax_owner_conso
 def healthz():
     row = provider.platform_query_one('select count(*) as count from platform_recovery_runs')
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
-                   release='salon-web-v15', recovery_applied=bool(row['count']))
+                   release='salon-web-v16', recovery_applied=bool(row['count']))
 
 
 @app.get('/platform/stats')
@@ -174,6 +178,38 @@ def setup_profile(terminal):
         except (ValueError, TypeError):
             pass
     return profile
+
+
+@app.route('/v1/estate-inventory', methods=['GET', 'POST'])
+def estate_inventory():
+    terminal = g.device_terminal
+    business, site, device = (terminal[k] for k in
+                              ('business_account_public_id', 'site_public_id', 'terminal_device_public_id'))
+    db = provider.get_platform_db()
+    if request.method == 'POST':
+        body = request.get_json(silent=True) or {}
+        beds = body.get('beds')
+        if not isinstance(beds, list) or len(beds) > 100 or any(type(n) is not int or not 1 <= n <= 999 for n in beds):
+            abort(400)
+        if storage.postgres():
+            db.raw.execute('select pg_advisory_xact_lock(hashtextextended(%s, 0))', (business,))
+        db.execute('delete from terminal_bed_inventory where business_id=? and terminal_id=?', (business, device))
+        for number in set(beds):
+            db.execute('insert into terminal_bed_inventory values (?,?,?,?)', (business, site, device, number))
+        db.commit()
+    sites = db.execute("""
+        select site_public_id,site_name,site_code,status from cloud_business_sites
+        where business_account_public_id=? and status='active' order by site_name
+    """, (business,)).fetchall()
+    terminals = db.execute("""
+        select t.terminal_name,t.terminal_device_public_id,t.site_public_id from cloud_terminal_registry t
+        join cloud_business_sites s on s.business_account_public_id=t.business_account_public_id
+                                   and s.site_public_id=t.site_public_id
+        where t.business_account_public_id=? and t.management_status<>'retired' and s.status='active'
+        order by t.terminal_name
+    """, (business,)).fetchall()
+    return jsonify(ok=True, sites=[dict(row) for row in sites], terminals=[dict(row) for row in terminals],
+                   bed_count=provider.estate_bed_count(business))
 
 
 @app.get('/v1/devices/<terminal_device_id>/setup-profile')

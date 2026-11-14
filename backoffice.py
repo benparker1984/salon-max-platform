@@ -345,7 +345,7 @@ def workspace(slug, section):
     if section == "dashboard":
         sites = p.platform_query_all("""
             select site_name,site_code,status from cloud_business_sites
-            where business_account_public_id=? and status<>'deleted' order by site_name
+            where business_account_public_id=? and status='active' order by site_name
         """, (tenant,))
         staff = p.platform_query_all("""
             select login,role from web_accounts where tenant=? and role in ('owner','staff')
@@ -353,9 +353,20 @@ def workspace(slug, section):
         """, (tenant,)) if account["role"] == "owner" else []
     if section in {"dashboard", "reports"}:
         for label, table in [("Customers", "cloud_customers"), ("Sites", "cloud_business_sites"),
-                             ("Devices", "cloud_terminal_registry"), ("Online packages", "web_offers")]:
+                             ("Terminals", "cloud_terminal_registry"), ("Online packages", "web_offers")]:
             key = "tenant" if table == "web_offers" else "business_account_public_id"
-            metrics[label] = p.platform_query_one(f"select count(*) as total from {table} where {key}=?", (tenant,))["total"]
+            filters = {
+                "cloud_customers": " and status='active'",
+                "cloud_business_sites": " and status='active'",
+                "cloud_terminal_registry": """ and management_status<>'retired' and exists (
+                    select 1 from cloud_business_sites s where s.business_account_public_id=cloud_terminal_registry.business_account_public_id
+                    and s.site_public_id=cloud_terminal_registry.site_public_id and s.status='active')""",
+                "web_offers": " and active=1",
+            }
+            metrics[label] = p.platform_query_one(
+                f"select count(*) as total from {table} where {key}=?{filters[table]}", (tenant,)
+            )["total"]
+        metrics["Bed Devices"] = p.estate_bed_count(tenant)
         sales = records if section == "reports" else transactions(tenant)
         metrics["Recent till sales"] = "£" + format(sum((row[5] for row in sales), Decimal(0)), ",.2f")
     return render(salon, slug, "workspace", section=section, account=account, rows=rows, columns=columns,

@@ -111,6 +111,21 @@ def main():
 
         sync(db, send)
 
+        site = db.execute("select id from sites where is_active=1 order by id limit 1").fetchone()
+        if site:
+            beds = [row[0] for row in db.execute(
+                "select device_number from devices where site_id=? and is_active=1", (site[0],)
+            )]
+            inventory_url = settings["sync_api_base_url"].rstrip("/") + "/estate-inventory"
+            body = json.dumps({"beds": beds}).encode()
+            with urlopen(Request(inventory_url, data=body, headers=headers), timeout=12) as response:
+                inventory = json.load(response)
+            if inventory.get("ok") is True:
+                with db:
+                    db.execute("create table if not exists local_estate_inventory (id integer primary key, data text)")
+                    db.execute("""insert into local_estate_inventory values (1,?)
+                                  on conflict(id) do update set data=excluded.data""", (json.dumps(inventory),))
+
 
 if __name__ == "__main__":
     main()
