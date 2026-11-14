@@ -460,13 +460,14 @@ def customer_online_status():
     tenant = g.device_terminal["business_account_public_id"]
     rows = p.platform_query_all("""
         select c.customer_number,c.email,
-            case when a.disabled=1 then 'Disabled'
+            case when c.status='archived' then 'Archived'
+                 when a.disabled=1 then 'Disabled'
                  when a.password_hash is not null then 'Active'
                  when a.invite_until>? then 'Awaiting setup'
                  else 'No online account' end as status
         from cloud_customers c left join web_accounts a
           on a.tenant=c.business_account_public_id and a.customer_id=c.customer_public_id and a.role='customer'
-        where c.business_account_public_id=? and c.status='active'
+        where c.business_account_public_id=? and c.status in ('active','archived')
     """, (stamp(), tenant))
     statuses = {}
     for row in rows:

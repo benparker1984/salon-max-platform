@@ -72,12 +72,12 @@ def sync(db, send):
             continue
         with db:
             db.execute(f"""
-                update customers set {", ".join(field + "=?" for field in FIELDS)}, profile_synced_at=?
+                update customers set {", ".join(field + "=?" for field in FIELDS)}, profile_synced_at=?, is_active=?
                 where customer_number=? and coalesce(profile_synced_at,'') < ?
                   and not exists (
                     select 1 from local_profile_outbox where customer_number=customers.customer_number
                   )
-            """, (*[profile[field] for field in FIELDS], version, profile["customer_number"], version))
+            """, (*[profile[field] for field in FIELDS], version, int(profile.get("status", "active") == "active"), profile["customer_number"], version))
 
 
 def main():

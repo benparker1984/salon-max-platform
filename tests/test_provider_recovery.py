@@ -768,6 +768,13 @@ def test_shared_profile_edit_and_till_sync(platform, tenant):
         assert row["first_name"] == "Portal name" and row["email"] == ""
         assert row["birthday"] == "2000-05-12"
         assert b"60 available" in browser.get(f"/salon/{business}/").data
+        for status, expected_code in (("archived", 403), ("active", 200)):
+            change = {"event_id": "profile_" + uuid.uuid4().hex, "customer_number": "123",
+                      "changes": {"status": status}}
+            assert till.post(path, json=change, headers=headers).status_code == 200
+            assert till.get(path, headers=headers).json["profiles"][0]["status"] == status
+            assert browser.get(f"/salon/{business}/").status_code == expected_code
+        assert b"60 available" in browser.get(f"/salon/{business}/").data
     finally:
         with app.app_context():
             p.platform_execute("delete from web_accounts where account_id=?", (account_id,))

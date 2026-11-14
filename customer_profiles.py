@@ -72,8 +72,8 @@ def profiles():
         """, (tenant, device, event_id)).fetchone()
         if not seen:
             matches = db.execute("""
-                select customer_public_id,birthday,postal_address,profile_synced_at from cloud_customers
-                where business_account_public_id=? and customer_number=? and status='active'
+                select customer_public_id,birthday,postal_address,profile_synced_at,status from cloud_customers
+                where business_account_public_id=? and customer_number=? and status in ('active','archived')
                 limit 2
             """, (tenant, number)).fetchall()
             if len(matches) != 1:
@@ -85,7 +85,13 @@ def profiles():
                                if field in ("birthday", "postal_address") and not match[field]}
                     if match["profile_synced_at"]:
                         changes = {}
-                if changes:
+                if set(changes) == {"status"} and changes["status"] in ("active", "archived"):
+                    db.execute("""
+                        update cloud_customers set status=?,profile_synced_at=?,updated_at=current_timestamp
+                        where business_account_public_id=? and customer_public_id=?
+                    """, (changes["status"], datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+                          tenant, match["customer_public_id"]))
+                elif changes:
                     save_profile(db, tenant, match["customer_public_id"], changes)
             except ProfileError as error:
                 db.rollback()
@@ -98,12 +104,12 @@ def profiles():
             db.commit()
         return jsonify(ok=True)
     rows = db.execute("""
-        select customer_number,first_name,last_name,birthday,email,phone,postal_address,profile_synced_at
+        select customer_number,first_name,last_name,birthday,email,phone,postal_address,profile_synced_at,status
         from cloud_customers
-        where business_account_public_id=? and status='active' and customer_number!=''
+        where business_account_public_id=? and status in ('active','archived') and customer_number!=''
           and (select count(*) from cloud_customers other
                where other.business_account_public_id=cloud_customers.business_account_public_id
-                 and other.customer_number=cloud_customers.customer_number and other.status='active')=1
+                 and other.customer_number=cloud_customers.customer_number and other.status in ('active','archived'))=1
         order by customer_number
     """, (tenant,)).fetchall()
     response = jsonify(ok=True, profiles=[dict(row) for row in rows])
