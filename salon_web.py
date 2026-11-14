@@ -631,6 +631,8 @@ def sign_in(tenant, customer_only=False):
         if role not in ROLES or len(login_name) > 254 or len(password) > 128:
             abort(400)
         if authenticate(tenant, login_name, role, password):
+            if role == "owner" and session.pop("busyness_settings_return", None) == tenant:
+                return redirect(url_for("salon.busyness_settings", tenant=tenant), code=303)
             pending = session.pop("customer_invite_return", None) if role in TEAM else None
             if pending and pending[0] == tenant:
                 return redirect(url_for("salon.invite_customer_email", tenant=tenant, number=pending[1]), code=303)
@@ -675,6 +677,62 @@ def edit_customer_details(tenant):
         db.rollback()
         flash(str(error), "profile")
     return redirect(url_for("salon.dashboard", tenant=tenant), code=303)
+
+
+@bp.route("/salon/<tenant>/busyness-settings", methods=["GET", "POST"])
+def busyness_settings(tenant):
+    salon = tenant_record(tenant)
+    if not session.get("salon_team_sessions", {}).get(tenant) and request.method == "GET":
+        session["busyness_settings_return"] = tenant
+        return redirect(url_for("salon.login", tenant=tenant))
+    account = member(tenant, {"owner"})
+    error = None
+    if request.method == "POST":
+        verify_csrf()
+        amber = request.form.get("amber", type=int)
+        red = request.form.get("red", type=int)
+        if amber is not None and red is not None and 1 <= amber < red <= 120:
+            p.platform_execute("""
+                insert into salon_busyness_settings values (?,?,?,?)
+                on conflict (tenant) do update set enabled=excluded.enabled,amber=excluded.amber,red=excluded.red
+            """, (tenant, int(request.form.get("enabled") == "yes"), amber, red))
+            flash("Busyness settings saved.", "busyness")
+            return redirect(url_for("salon.busyness_settings", tenant=tenant), code=303)
+        error = "Enter two whole minutes values. The amber threshold must be lower than red."
+    settings = p.platform_query_one("select * from salon_busyness_settings where tenant=?", (tenant,))
+    return page(salon=salon, mode="busyness-settings", team_account=account, error=error,
+                settings=settings or {"enabled": False, "amber": 5, "red": 15})
+
+
+def customer_busyness(tenant):
+    settings = p.platform_query_one("select * from salon_busyness_settings where tenant=? and enabled=1", (tenant,))
+    if not settings:
+        return []
+    fresh = stamp(-90)
+    rows = p.platform_query_all("""
+        select s.site_name, min(r.wait_seconds) as wait_seconds
+        from cloud_business_sites s
+        left join salon_busyness_reports r on r.tenant=s.business_account_public_id and r.site=s.site_public_id
+            and r.reported_at>=? and exists (
+                select 1 from cloud_terminal_registry t where t.business_account_public_id=r.tenant
+                and t.site_public_id=r.site and t.terminal_device_public_id=r.terminal
+                and t.management_status='active')
+        where s.business_account_public_id=? and s.status='active'
+        group by s.site_public_id,s.site_name order by s.site_name
+    """, (fresh, tenant))
+    result = []
+    for row in rows:
+        seconds = row["wait_seconds"]
+        if seconds is None:
+            colour, label = "gray", "Live status unavailable"
+        elif seconds < settings["amber"] * 60:
+            colour, label = "green", "Quiet"
+        elif seconds < settings["red"] * 60:
+            colour, label = "orange", "Getting busy"
+        else:
+            colour, label = "red", "Busy"
+        result.append((row["site_name"], colour, label))
+    return result
 
 
 @bp.get("/salon/<tenant>/", defaults={"section": None})
@@ -734,7 +792,7 @@ def dashboard(tenant, section):
         order by o.paid_at desc, o.order_id limit 50
     """, (tenant, account["customer_id"])) if section == "top-up" else []
     return page(salon=salon, mode="dashboard", account=account, minutes=minutes, history=history, sessions=sessions,
-                customer_section=section, details=details, course_orders=course_orders, offers=offers(tenant) if section == "top-up" else [],
+                customer_section=section, details=details, busyness=customer_busyness(tenant) if details and not section else [], course_orders=course_orders, offers=offers(tenant) if section == "top-up" else [],
                 checkout_enabled=section == "top-up" and configured(tenant))
 
 

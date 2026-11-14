@@ -36,6 +36,18 @@
 <button>{{ 'Send email invitation' if email_enabled else 'Prepare email invitation' }}</button>
 </form>
 {% endif %}
+{% elif mode == 'busyness-settings' %}
+<h2>Salon busyness</h2>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% for message in get_flashed_messages(category_filter=['busyness']) %}<p role="status">{{ message }}</p>{% endfor %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label><input class="checkbox" type="checkbox" name="enabled" value="yes" {% if settings.enabled %}checked{% endif %}> Show busyness to customers</label>
+<label>Amber starts at (minutes)<input type="number" name="amber" min="1" max="119" value="{{ settings.amber }}" required></label>
+<label>Red starts at (minutes)<input type="number" name="red" min="2" max="120" value="{{ settings.red }}" required></label>
+<p>Green covers waits below amber. Amber covers waits below red. Red covers waits at or above the red threshold.</p>
+<button>Save busyness settings</button>
+</form>
 {% elif mode == 'customer-join' %}
 <h2>Create your online account</h2>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
@@ -114,7 +126,13 @@
 <h2>Your minutes</h2>
 {% if minutes is none %}<p>No minute balance has synced yet.</p>{% else %}<p>{{ minutes }} available</p>{% endif %}
 <nav class="customer-nav" aria-label="Customer account">
-<a href="{{ url_for('salon.dashboard', tenant=tenant) }}" {% if not customer_section %}aria-current="page"{% endif %}>Overview</a>
+<a href="{{ url_for('salon.dashboard', tenant=tenant) }}" {% if not customer_section %}
+{% if busyness %}
+<h2>How busy is my salon?</h2>
+<ul>{% for site, colour, label in busyness %}
+<li><span aria-hidden="true" style="display:inline-block;width:.8em;height:.8em;border-radius:50%;background:{{ colour }}"></span> {{ site }} · {{ label }}</li>
+{% endfor %}</ul>
+{% endif %}aria-current="page"{% endif %}>Overview</a>
 <a href="{{ url_for('salon.dashboard', tenant=tenant, section='top-up') }}" {% if customer_section == 'top-up' %}aria-current="page"{% endif %}>Top up now</a>
 <a href="{{ url_for('salon.dashboard', tenant=tenant, section='history') }}" {% if customer_section == 'history' %}aria-current="page"{% endif %}>Tanning history</a>
 </nav>

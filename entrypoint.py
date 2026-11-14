@@ -58,6 +58,13 @@ def initialise():
                 business_id text not null, site_id text not null, terminal_id text not null,
                 bed_number integer not null, primary key (business_id,site_id,terminal_id,bed_number)
             )""")
+            provider.platform_execute("""create table if not exists salon_busyness_settings (
+                tenant text primary key, enabled integer not null, amber integer not null, red integer not null
+            )""")
+            provider.platform_execute("""create table if not exists salon_busyness_reports (
+                tenant text not null, site text not null, terminal text not null,
+                wait_seconds integer not null, reported_at text not null, primary key (tenant,site,terminal)
+            )""")
             app.config['PLATFORM_SCHEMA_READY'] = True
             commissioning.init_db()
             commissioning.ensure_column('sites', 'recovered_public_id', "text not null default ''")
@@ -131,7 +138,7 @@ app.view_functions['dashboard'] = lambda: redirect(url_for('salonmax_owner_conso
 def healthz():
     row = provider.platform_query_one('select count(*) as count from platform_recovery_runs')
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
-                   release='salon-web-v16', recovery_applied=bool(row['count']))
+                   release='salon-web-v17', recovery_applied=bool(row['count']))
 
 
 @app.get('/platform/stats')
@@ -178,6 +185,21 @@ def setup_profile(terminal):
         except (ValueError, TypeError):
             pass
     return profile
+
+
+@app.post('/v1/busyness')
+def report_busyness():
+    terminal = g.device_terminal
+    seconds = (request.get_json(silent=True) or {}).get('wait_seconds')
+    if type(seconds) is not int or not 0 <= seconds <= 86400:
+        abort(400)
+    provider.platform_execute("""
+        insert into salon_busyness_reports values (?,?,?,?,?)
+        on conflict (tenant,site,terminal) do update set
+            wait_seconds=excluded.wait_seconds, reported_at=excluded.reported_at
+    """, (terminal['business_account_public_id'], terminal['site_public_id'],
+          terminal['terminal_device_public_id'], seconds, provider.now_utc_text()))
+    return jsonify(ok=True)
 
 
 @app.route('/v1/estate-inventory', methods=['GET', 'POST'])

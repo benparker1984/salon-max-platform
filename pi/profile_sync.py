@@ -4,6 +4,7 @@ import os
 import sqlite3
 from datetime import date
 import uuid
+import time
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -110,6 +111,17 @@ def main():
             return result
 
         sync(db, send)
+
+        wait_file = Path.home() / "till-build/salon-wait.json"
+        try:
+            snapshot = json.loads(wait_file.read_text())
+            if 0 <= time.time() - snapshot["timestamp"] < 45:
+                url = settings["sync_api_base_url"].rstrip("/") + "/busyness"
+                body = json.dumps({"wait_seconds": snapshot["wait_seconds"]}).encode()
+                with urlopen(Request(url, data=body, headers=headers), timeout=5):
+                    pass
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
 
         site = db.execute("select id from sites where is_active=1 order by id limit 1").fetchone()
         if site:

@@ -95,6 +95,7 @@
 <p><a class="pi-launch" href="{{ till.origin }}/" rel="noreferrer">Open back office{% if tills|length > 1 %} · {{ till.site_name }} · {{ till.terminal_name }}{% endif %}</a></p>
 {% endfor %}
 <p>Connect to your salon’s private network to open the back office.</p>
+<p><a href="{{ url_for('salon.busyness_settings', tenant=salon.business_account_public_id) }}">Salon busyness settings</a></p>
 <p><a href="{{ url_for('salon.provision_team', tenant=salon.business_account_public_id) }}">Manage customer online access</a></p>
 <p><a href="{{ url_for('checkout.manage', tenant=salon.business_account_public_id) }}">Online courses and sales</a></p>
 <form method="post" action="{{ url_for('backoffice.sign_out', slug=slug) }}">
