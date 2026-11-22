@@ -1,0 +1,9 @@
+{
+  "release": {
+    "version": "2026.11.22.4",
+    "sha256": "d6caab1b7ae99c18c5249b2021fb60eb45a2ffa6a3d23e5992c2cd5ea648267e",
+    "schema": 1,
+    "channel": "stable"
+  },
+  "signature": "ZPieXR6Z3Ej5LPkZrjBxQ9LdXXCf3COeVcxm0ZdgDF0zIp7JV34lNEkwuJtwcB3FeV4JT6x1tDYxOSMxPzg5Dw=="
+}

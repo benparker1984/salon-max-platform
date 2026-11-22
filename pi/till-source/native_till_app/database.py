@@ -357,10 +357,15 @@ class TillRepository:
             row = self.fetch_one("select * from customers where customer_number = ? order by id desc limit 1", (customer_number,))
             if row is not None:
                 return row
+            return None
         if account_number:
             row = self.fetch_one("select * from customers where account_number = ? order by id desc limit 1", (account_number,))
             if row is not None:
                 return row
+        # A supplied account identity must never fall through to a name match.
+        # Different people can share a name, and stale aliases must not move credit.
+        if customer_number or account_number:
+            return None
         if first_name and last_name:
             return self.fetch_one(
                 """
@@ -380,16 +385,22 @@ class TillRepository:
             return {"applied_count": 0, "customer_ids": []}
         minute_entries = payload.get("minute_entries")
         balance_entries = payload.get("balance_entries")
-        checkpoint_row = self.cloud_correction_checkpoint()
-        last_minute_ledger_id = int((checkpoint_row["last_minute_ledger_id"] if checkpoint_row else 0) or 0)
-        last_balance_ledger_id = int((checkpoint_row["last_balance_ledger_id"] if checkpoint_row else 0) or 0)
         applied_count = 0
         touched_customer_ids: set[int] = set()
 
         with self.connection() as conn:
+            conn.execute("begin immediate")
+            checkpoint_row = conn.execute(
+                "select * from local_cloud_correction_checkpoint order by id limit 1"
+            ).fetchone()
+            last_minute_ledger_id = int((checkpoint_row["last_minute_ledger_id"] if checkpoint_row else 0) or 0)
+            last_balance_ledger_id = int((checkpoint_row["last_balance_ledger_id"] if checkpoint_row else 0) or 0)
             if isinstance(minute_entries, list):
                 for entry in minute_entries:
                     if not isinstance(entry, dict):
+                        continue
+                    entry_id = int(entry.get("id") or 0)
+                    if entry_id <= last_minute_ledger_id:
                         continue
                     customer_row = self.find_customer_for_cloud_identity(
                         customer_number=str(entry.get("customer_number") or ""),
@@ -398,7 +409,9 @@ class TillRepository:
                         last_name=str(entry.get("customer_last_name") or ""),
                     )
                     if customer_row is None:
-                        continue
+                        # Keep the cursor before this entry so it retries after
+                        # the customer directory arrives. Never skip their credit.
+                        break
                     delta_minutes = int(entry.get("delta_minutes") or 0)
                     conn.execute(
                         "update customers set package_minutes = package_minutes + ? where id = ?",
@@ -411,6 +424,9 @@ class TillRepository:
                 for entry in balance_entries:
                     if not isinstance(entry, dict):
                         continue
+                    entry_id = int(entry.get("id") or 0)
+                    if entry_id <= last_balance_ledger_id:
+                        continue
                     customer_row = self.find_customer_for_cloud_identity(
                         customer_number=str(entry.get("customer_number") or ""),
                         account_number=str(entry.get("account_number") or ""),
@@ -418,7 +434,9 @@ class TillRepository:
                         last_name=str(entry.get("customer_last_name") or ""),
                     )
                     if customer_row is None:
-                        continue
+                        # Keep the cursor before this entry so it retries after
+                        # the customer directory arrives. Never skip their credit.
+                        break
                     delta_amount = round(float(entry.get("delta_amount") or 0), 2)
                     conn.execute(
                         "update customers set account_balance = account_balance + ? where id = ?",
@@ -1718,23 +1736,27 @@ class TillRepository:
         return 0.0
 
     def open_till(self, site_id: int, terminal_id: int, staff_user_id: int, opening_float: float):
-        session_id = self.execute(
-            """
-            insert into till_sessions (
-                site_id,
-                terminal_id,
-                opened_by_user_id,
-                opening_float,
-                expected_cash,
-                counted_cash,
-                variance,
-                status,
-                closing_notes
-            ) values (?, ?, ?, ?, ?, 0, 0, 'open', '')
-            """,
-            (site_id, terminal_id, staff_user_id, opening_float, opening_float),
-        )
-        row = self.fetch_one("select * from till_sessions where id = ?", (session_id,))
+        # Sign-out leaves the cash session open. Resume it rather than creating
+        # another cash drawer each time a member of staff signs back in.
+        with self.connection() as conn:
+            conn.execute("begin immediate")
+            row = conn.execute(
+                "select * from till_sessions where terminal_id=? and status='open' order by id desc limit 1",
+                (terminal_id,),
+            ).fetchone()
+            if row is not None and int(row["site_id"]) != int(site_id):
+                raise ValueError("The terminal has an open session at another site; close it before moving the terminal.")
+            if row is None:
+                session_id = conn.execute(
+                    """
+                    insert into till_sessions (
+                        site_id, terminal_id, opened_by_user_id, opening_float,
+                        expected_cash, counted_cash, variance, status, closing_notes
+                    ) values (?, ?, ?, ?, ?, 0, 0, 'open', '')
+                    """,
+                    (site_id, terminal_id, staff_user_id, opening_float, opening_float),
+                ).lastrowid
+                row = conn.execute("select * from till_sessions where id=?", (session_id,)).fetchone()
         return TillSessionContext(
             id=int(row["id"]),
             site_id=int(row["site_id"]),
