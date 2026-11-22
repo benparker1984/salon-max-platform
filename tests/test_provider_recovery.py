@@ -50,6 +50,53 @@ def owner_client(app):
     return c
 
 
+def test_complete_database_backup_is_manager_only_and_includes_all_app_tables(platform):
+    app, p = platform
+    response = owner_client(app).get('/platform/backups/database.json')
+    assert response.status_code == 200
+    assert response.headers['Cache-Control'] == 'no-store, private'
+    data = response.json
+    assert data['format'] == 'salonmax-application-database'
+    tables = {(t['schema'], t['name']): t for t in data['tables']}
+    for name in ['web_accounts', 'web_orders', 'web_offers', 'cloud_customers',
+                 'cloud_customer_minute_ledger', 'cloud_customer_minute_summary']:
+        assert ('public', name) in tables
+    assert ('salon_config', 'customers') in tables
+    assert all(t['row_count'] == len(t['rows']) for t in data['tables'])
+    assert app.test_client().get('/platform/backups/database.json').status_code in (302, 403)
+    customer = app.test_client()
+    with customer.session_transaction() as session:
+        session['salon_web_account_id'] = 'customer-cannot-export'
+    assert customer.get('/platform/backups/database.json').status_code in (302, 403)
+
+
+def test_complete_database_backup_restores_into_empty_database(platform, tenant):
+    import psycopg
+    from psycopg import sql
+    from restore_database_backup import restore
+    app, p = platform
+    business, site, device, headers = tenant
+    assert app.test_client().post('/v1/sync/events/push', json=sale(device), headers=headers).status_code == 200
+    snapshot = owner_client(app).get('/platform/backups/database.json').json
+    url = os.environ['SALONMAX_DATABASE_URL']
+    name = 'salonmax_backup_check_' + uuid.uuid4().hex[:12]
+    base = urlparse(url)
+    target = base._replace(path='/' + name).geturl()
+    with psycopg.connect(url, autocommit=True) as admin:
+        admin.execute(sql.SQL('create database {}').format(sql.Identifier(name)))
+    try:
+        result = restore(snapshot, target)
+        assert result['tables'] == len(snapshot['tables'])
+        with psycopg.connect(target) as restored:
+            assert restored.execute('select minutes_available from cloud_customer_minute_summary where business_account_public_id=%s', (business,)).fetchone()[0] == 30
+            assert restored.execute('select count(*) from cloud_customer_minute_ledger where business_account_public_id=%s', (business,)).fetchone()[0] == 1
+        with pytest.raises(ValueError, match='not empty'):
+            restore(snapshot, target)
+    finally:
+        with psycopg.connect(url, autocommit=True) as admin:
+            admin.execute(sql.SQL('drop database {}').format(sql.Identifier(name)))
+
+
 def sale(device,event_id='sale-1',customer_id=123):
     return {'terminal_device_id':device,'events':[{'local_event_id':event_id,'event_type':'transaction.completed','created_at':'2026-11-10T12:00:00Z',
              'payload':{'customer_id':customer_id,'customer_first_name':'Verification','transaction_type':'package_sale','minutes_included':30,'transaction_number':event_id}}]}

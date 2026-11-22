@@ -19,6 +19,7 @@ import checkout
 import marketing
 import customer_profiles
 import updates
+import database_backup
 from commercial import bp as commercial_bp
 
 app = provider.app
@@ -30,6 +31,7 @@ app.register_blueprint(checkout.bp)
 app.register_blueprint(marketing.bp)
 app.register_blueprint(customer_profiles.bp)
 app.register_blueprint(updates.bp)
+app.register_blueprint(database_backup.bp)
 app.context_processor(updates.template_context)
 app.config.update(MAX_CONTENT_LENGTH=10 * 1024 * 1024, SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=storage.postgres())
