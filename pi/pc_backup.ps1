@@ -138,10 +138,49 @@ try {
     Test-Bundle (Unprotect-Archive ([IO.File]::ReadAllBytes($temporary)) $key) | Out-Null
     [IO.File]::Move($temporary, $file)
     $complete = $manifest.cloud_status -eq 'ok'
+    $receiptStatus = 'not-issued'
+    if ($complete) {
+        # Only this PC holds the private signing key. A compromised Pi cannot
+        # invent a successful off-device backup receipt.
+        $signingKeyPath = Join-Path $BackupRoot 'receipt-signing-private.xml'
+        $rsa = [Security.Cryptography.RSACryptoServiceProvider]::new(2048)
+        $rsa.PersistKeyInCsp = $false
+        try {
+            if (Test-Path -LiteralPath $signingKeyPath) { $rsa.FromXmlString([IO.File]::ReadAllText($signingKeyPath)) }
+            else { [IO.File]::WriteAllText($signingKeyPath, $rsa.ToXmlString($true)) }
+            $public = $rsa.ToXmlString($false)
+            [IO.File]::WriteAllText((Join-Path $BackupRoot 'receipt-signing-public.xml'), $public)
+            $body = @{format='salonmax-pc-backup-receipt';version=1;created_at=[DateTime]::UtcNow.ToString('o');
+                filename=$name;sha256=(Get-Sha256 ([IO.File]::ReadAllBytes($file)));cloud_status='ok';
+                customer_accounts_sha256=$manifest.databases.'databases/till_backoffice.db'.customer_accounts_sha256;
+                business_data_sha256=$manifest.databases.'databases/till_backoffice.db'.business_data_sha256;
+                pi_serial=$manifest.pi_serial;sd_cid=$manifest.sd_cid} | ConvertTo-Json -Compress
+            $bodyBytes = [Text.Encoding]::UTF8.GetBytes($body)
+            $signature = $rsa.SignData($bodyBytes, 'SHA256')
+            $receipt = @{payload=[Convert]::ToBase64String($bodyBytes);signature=[Convert]::ToBase64String($signature)}
+            $packet = @{public_key_xml=$public;receipt=$receipt} | ConvertTo-Json -Depth 4 -Compress
+            $packet | Set-Content -LiteralPath (Join-Path $BackupRoot 'latest-receipt.json') -Encoding UTF8
+            $receiptStart = [Diagnostics.ProcessStartInfo]::new()
+            $receiptStart.FileName = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+            $receiptStart.Arguments = '-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 ' + $PiHost + ' python3 /home/benparker1984/Salon-Max/ops/record_backup_receipt.py'
+            $receiptStart.UseShellExecute=$false; $receiptStart.CreateNoWindow=$true
+            $receiptStart.RedirectStandardInput=$true; $receiptStart.RedirectStandardOutput=$true; $receiptStart.RedirectStandardError=$true
+            $receiptProcess = [Diagnostics.Process]::new(); $receiptProcess.StartInfo=$receiptStart
+            try {
+                $receiptProcess.Start() | Out-Null
+                $receiptProcess.StandardInput.Write($packet); $receiptProcess.StandardInput.Close()
+                if (-not $receiptProcess.WaitForExit(30000)) { $receiptProcess.Kill(); throw 'Backup receipt upload timed out' }
+                if ($receiptProcess.ExitCode -ne 0) { throw 'Backup receipt was not accepted by the Pi' }
+                $receiptStatus = 'issued'
+            } finally { $receiptProcess.Dispose() }
+        } catch { $receiptStatus = 'unavailable' }
+        finally { $rsa.Dispose() }
+    }
     @{state=$(if ($complete) {'ok'} else {'partial'}); checked_at=[DateTime]::UtcNow.ToString('o');
       last_file=$name; cloud_status=$manifest.cloud_status;
       customers=$manifest.databases.'databases/till_backoffice.db'.customers;
       total_minutes=$manifest.databases.'databases/till_backoffice.db'.total_minutes;
+      recovery_receipt=$receiptStatus;
       message=$(if ($complete) {'Pi and hosted database captured and verified'} else {'Pi saved; hosted database unavailable'})
     } | ConvertTo-Json | Set-Content -LiteralPath $statusPath -Encoding UTF8
     # Daily retention: keep 30 days, plus every copy made in the last 24 hours.

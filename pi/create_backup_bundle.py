@@ -18,6 +18,8 @@ from urllib.parse import urlencode
 from urllib.request import build_opener, HTTPCookieProcessor
 import zipfile
 from contextlib import closing
+sys.path.insert(0, str(Path(__file__).with_name('groundhog')))
+from backup_fingerprint import business_fingerprint
 
 
 def cloud_snapshot(root):
@@ -51,6 +53,10 @@ def create_bundle(home):
     manifest = {'format': 'salonmax-recovery-bundle', 'version': 1,
                 'created_at': datetime.now(timezone.utc).isoformat(), 'files': {},
                 'databases': {}, 'cloud_status': 'failed'}
+    for name, source in (('pi_serial', Path('/sys/firmware/devicetree/base/serial-number')),
+                         ('sd_cid', Path('/sys/block/mmcblk0/device/cid'))):
+        if source.exists():
+            manifest[name] = source.read_text().strip('\x00\n ')
     output = io.BytesIO()
     with tempfile.TemporaryDirectory(prefix='salonmax-backup-') as staging:
         os.chmod(staging, 0o700)
@@ -80,6 +86,7 @@ def create_bundle(home):
                             info.update(customers=len(rows), active_customers=sum(bool(r[5]) for r in rows),
                                         total_minutes=sum(r[4] or 0 for r in rows),
                                         customer_accounts_sha256=hashlib.sha256(json.dumps(rows).encode()).hexdigest())
+                            info['business_data_sha256'] = business_fingerprint(copy)
                         manifest['databases'][name] = info
                 add(name, target.read_bytes())
 

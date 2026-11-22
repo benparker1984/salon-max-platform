@@ -1,0 +1,47 @@
+#!/bin/busybox sh
+# PID 1 in a standalone RAM filesystem. Never mount the card being erased.
+BB=/bin/busybox
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sys /sys
+$BB mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+fail() {
+    echo "GROUND HOG BLOCKED: $1. Card has not been certified erased."
+    $BB sync
+    while :; do $BB sleep 3600; done
+}
+. /groundhog.conf
+[ "$ARMED" = "yes" ] || fail "Recovery image is not armed"
+case " $($BB cat /proc/cmdline) " in
+    *" salonmax_groundhog=$NONCE "*) ;;
+    *) fail "One-time boot authorization does not match" ;;
+esac
+SERIAL=$($BB tr -d '\000\n ' </sys/firmware/devicetree/base/serial-number)
+CID=$($BB tr -d '\n ' </sys/block/mmcblk0/device/cid)
+SECTORS=$($BB cat /sys/block/mmcblk0/size)
+[ "$SERIAL" = "$EXPECTED_SERIAL" ] || fail "Wrong Raspberry Pi"
+[ "$CID" = "$EXPECTED_CID" ] || fail "Wrong SD card"
+[ "$SECTORS" = "$EXPECTED_SECTORS" ] || fail "Card capacity changed"
+[ -b /dev/mmcblk0 ] || fail "Bound SD card is not available"
+# No filesystem on the card may be mounted by this standalone image.
+$BB grep -q '/dev/mmcblk0' /proc/mounts && fail "Card is mounted"
+echo "GROUND HOG: overwriting the entire bound SD card. Keep power connected."
+echo "The external PC backup is not connected to this erase process."
+CHUNKS=$((SECTORS / 8192))
+TAIL=$((SECTORS % 8192))
+$BB dd if=/dev/zero of=/dev/mmcblk0 bs=4194304 count="$CHUNKS" conv=fsync || fail "Card write failed"
+if [ "$TAIL" -gt 0 ]; then
+    $BB dd if=/dev/zero of=/dev/mmcblk0 bs=512 seek=$((CHUNKS * 8192)) count="$TAIL" conv=notrunc,fsync || fail "Card tail write failed"
+fi
+$BB sync
+$BB blockdev --flushbufs /dev/mmcblk0 || fail "Card flush failed"
+# Verify both ends; dd's successful bounded writes cover the complete capacity.
+# This is logical overwrite, not certified physical flash-cell sanitisation.
+FIRST=$($BB dd if=/dev/mmcblk0 bs=512 count=2048 2>/dev/null | $BB sha256sum)
+ZERO=$($BB dd if=/dev/zero bs=512 count=2048 2>/dev/null | $BB sha256sum)
+[ "$FIRST" = "$ZERO" ] || fail "Card beginning verification failed"
+LAST=$($BB dd if=/dev/mmcblk0 bs=512 skip=$((SECTORS - 2048)) count=2048 2>/dev/null | $BB sha256sum)
+[ "$LAST" = "$ZERO" ] || fail "Card end verification failed"
+echo "Logical SD-card overwrite completed. The Pi requires a full reinstall."
+$BB poweroff -f
+while :; do $BB sleep 3600; done

@@ -65,7 +65,8 @@ def test_failed_install_restores_previous_release(updater, monkeypatch, tmp_path
 
 def test_restart_gate_waits_for_logout_beds_and_queue(monkeypatch, tmp_path):
     path = Path(__file__).parents[1] / "pi/till-source/native_till_app/update_runtime.py"
-    spec = importlib.util.spec_from_file_location("runtime_test", path)
+    monkeypatch.syspath_prepend(str(path.parent.parent))
+    spec = importlib.util.spec_from_file_location("native_till_app.update_runtime", path)
     runtime = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runtime)
     monkeypatch.setenv("SALONMAX_UPDATE_STATE", str(tmp_path))

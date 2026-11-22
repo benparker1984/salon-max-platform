@@ -17,6 +17,8 @@ PC location: `C:\Users\benpa\SalonMaxBackups`.
 * `status.json`: latest attempt, success/partial/error, time and saved filename.
 * `schedule.json`: task schedule and actual Windows logon mode.
 * `tools/backup.ps1`: installed worker, independent of the Codex workspace/runtime.
+* `receipt-signing-private.xml`: separate private key for signed backup receipts;
+  this key stays on this PC. The Pi receives only its public key and signed receipt.
 
 The collector streams the recovery archive over authenticated SSH. The PC encrypts
 it with AES-256-CBC and a fresh random IV, authenticated using a separate HMAC-SHA256
@@ -40,6 +42,10 @@ A cloud outage still saves the Pi archive but reports **partial**, returns failu
 to Task Scheduler for retry, and does not prune older complete backups. A Pi outage
 reports failure and preserves existing archives. The Pi and hosted snapshots have
 separate capture times; restoring both does not itself resolve pending sync conflicts.
+After a complete saved/verified backup, the PC sends a signed receipt to the Pi.
+The staged Ground Hog controller verifies its age, device binding and business-data
+fingerprint. Receipt delivery failure does not invalidate an already saved backup,
+but blocks emergency erasure until a new receipt is successfully delivered.
 
 ## Verify or recover
 

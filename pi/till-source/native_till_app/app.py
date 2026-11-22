@@ -5033,6 +5033,9 @@ class NativeTillWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
+        self.groundhog_action = self.menuBar().addAction("Ground Hog")
+        self.groundhog_action.triggered.connect(self.show_groundhog)
+        self.groundhog_action.setVisible(False)
 
         self.login_page = LoginPage(repo, self.handle_login, self.show_device_setup)
         self.device_setup_page = DeviceSetupPage(repo, self.handle_device_paired, self.show_login_or_setup)
@@ -5170,11 +5173,17 @@ class NativeTillWindow(QMainWindow):
                     and str(current["role"]).strip().lower() in {"owner", "manager"})
 
     def refresh_gpio_test_access(self):
+        from .groundhog import owner_allowed
+        self.groundhog_action.setVisible(owner_allowed(self.repo, self.session.staff_row))
         allowed = self.gpio_test_allowed()
         for button in self.sunbed_board_page.findChildren(QPushButton):
             if button.text() == "GPIO Test":
                 button.setVisible(allowed)
                 button.setEnabled(allowed)
+
+    def show_groundhog(self):
+        from .groundhog import show
+        show(self)
 
     def show_gpio_test(self):
         if not self.gpio_test_allowed():
