@@ -34,7 +34,8 @@ def build(config, nonce):
     busybox = Path('/bin/busybox')
     result = subprocess.run(['/usr/bin/ldd', str(busybox)], text=True, capture_output=True, check=True)
     libraries = set(re.findall(r'(/[^\s()]+)', result.stdout))
-    files = {'bin/busybox': busybox.read_bytes(), 'init': Path(__file__).with_name('init').read_bytes()}
+    files = {'bin/busybox': busybox.read_bytes(),
+             'init': Path(__file__).with_name('init').read_bytes().replace(b'\r\n', b'\n')}
     for library in libraries:
         path = Path(library)
         if path.is_file():
