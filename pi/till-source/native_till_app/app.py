@@ -2334,6 +2334,8 @@ class SunbedBoardPage(QWidget):
             beds.append(
                 {
                     "display_name": display_name,
+                    "custom_name": row["custom_name"] if row else "",
+                    "bed_number": int(row["bed_number"]) if row else bed_number,
                     "bed_type": bed_type,
                     "image_path": image_path,
                     "status_text": self.phase_label(current_phase) if current_phase != "ready" else "Ready",
@@ -4894,6 +4896,8 @@ class CustomerDisplayWindow(QWidget):
             rows.append(
                 {
                     "display_name": display_name,
+                    "custom_name": row["custom_name"] if row else "",
+                    "bed_number": int(row["bed_number"]) if row else bed_number,
                     "status_text": self.phase_label(current_phase) if current_phase != "ready" else "Ready",
                     "time_left": self.format_mmss(state["time_left"]),
                     "queue_count": len(ordered_queue),
@@ -5323,7 +5327,16 @@ class NativeTillWindow(QMainWindow):
         staged.write_text(json.dumps({"timestamp": time.time(), "wait_seconds": min(86400, min(waits))}))
         staged.replace(path)
 
+    def refresh_sunbed_settings(self):
+        rows = self.repo.sunbed_status_rows(self.session.till_session)
+        signature = tuple((row["id"], row["display_name"], row["image_path"], row["bed_type"],
+                           row["status_text"], row["site_is_active"]) for row in rows)
+        if signature != getattr(self, "_sunbed_settings_signature", None):
+            self._sunbed_settings_signature = signature
+            self.sunbed_board_page.refresh_view()
+
     def run_sync_cycle(self):
+        self.refresh_sunbed_settings()
         self.refresh_gpio_test_access()
         self.open_till_page.refresh_pair_device_access()
         try:
