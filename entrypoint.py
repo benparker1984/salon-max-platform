@@ -18,6 +18,7 @@ import backoffice
 import checkout
 import marketing
 import customer_profiles
+import updates
 from commercial import bp as commercial_bp
 
 app = provider.app
@@ -28,6 +29,8 @@ app.add_template_global(backoffice.office_url)
 app.register_blueprint(checkout.bp)
 app.register_blueprint(marketing.bp)
 app.register_blueprint(customer_profiles.bp)
+app.register_blueprint(updates.bp)
+app.context_processor(updates.template_context)
 app.config.update(MAX_CONTENT_LENGTH=10 * 1024 * 1024, SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=storage.postgres())
 
@@ -54,6 +57,7 @@ def initialise():
             backoffice.init_schema()
             checkout.init_schema()
             marketing.init_schema()
+            updates.init_schema()
             provider.platform_execute("""create table if not exists terminal_bed_inventory (
                 business_id text not null, site_id text not null, terminal_id text not null,
                 bed_number integer not null, primary key (business_id,site_id,terminal_id,bed_number)
@@ -138,7 +142,7 @@ app.view_functions['dashboard'] = lambda: redirect(url_for('salonmax_owner_conso
 def healthz():
     row = provider.platform_query_one('select count(*) as count from platform_recovery_runs')
     return jsonify(ok=True, product='salon-max-platform', database='postgres' if storage.postgres() else 'sqlite',
-                   release='salon-web-v17', recovery_applied=bool(row['count']))
+                   release='salon-web-v18', recovery_applied=bool(row['count']))
 
 
 @app.get('/platform/stats')

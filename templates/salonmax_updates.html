@@ -1,5 +1,21 @@
 {% extends "provider_base.html" %}
 {% block content %}
+<div class="panel">
+<h2>Managed till updates</h2>
+{% if approved_release %}<p>Approved stable release {{ approved_release.release.version }}</p>{% endif %}
+<table>
+<thead><tr><th>Salon / till</th><th>Installed</th><th>Available</th><th>Status</th><th>Last check</th><th>Last install</th><th></th></tr></thead>
+<tbody>{% for row in managed_updates %}
+<tr><td>{{ row.business_name }} / {{ row.terminal_name }}</td>
+<td>{{ row.installed or 'Not reporting' }}</td><td>{{ row.available or '&mdash;' }}</td>
+<td>{{ (row.state or 'Awaiting updater installation')|replace('_',' ')|title }}{% if row.message %}<br>{{ row.message }}{% endif %}</td>
+<td>{{ row.checked_at|localdt if row.checked_at else 'Never' }}</td><td>{{ row.installed_at|localdt if row.installed_at else 'Never' }}</td>
+<td><form method="post" action="{{ url_for('updates.request_update',device=row.terminal_device_public_id) }}">
+<input type="hidden" name="csrf" value="{{ managed_updates_csrf }}"><button>Update now</button>
+</form></td></tr>
+{% endfor %}</tbody></table>
+<p>Update now requests the approved stable release. The till restarts after sign-out when no beds or queued sales are active.</p>
+</div>
 <div class="stack">
     {% if notice %}
     <div class="alert warning">{{ notice }}</div>
@@ -68,7 +84,7 @@
 
     <div class="panel">
         <h2>Set Target Version</h2>
-        <div class="muted" style="margin-bottom:12px;">This does not push an update yet. It defines the version and rollout channel each Pi should follow, so the owner platform can flag what needs attention.</div>
+        <div class="muted" style="margin-bottom:12px;">Managed tills follow an approved signed target. A blank target follows the stable release. Installation waits for sign-out and idle beds and queues.</div>
         <form method="post" action="{{ url_for('salonmax_set_global_target_version') }}" class="grid" style="grid-template-columns: 1.2fr 1fr 0.9fr auto; align-items:end;">
             <div>
                 <label for="target_business_account_public_id">Business Scope</label>

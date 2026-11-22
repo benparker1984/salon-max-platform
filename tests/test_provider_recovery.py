@@ -861,3 +861,26 @@ def test_customer_invite_requires_staff_and_updates_status(platform, tenant, mon
     result = browser.get("/v1/customers/online-status", headers=headers)
     assert result.json["statuses"]["123"]["status"] == "Awaiting setup"
     assert browser.get("/v1/customers/online-status").status_code == 403
+
+def test_managed_update_device_auth_and_owner_action(platform, tenant):
+    import updates
+    app, p = platform
+    business, _, device, headers = tenant
+    client = app.test_client()
+    assert client.get("/v1/updates/manifest").status_code == 403
+    manifest = client.get("/v1/updates/manifest", headers=headers)
+    assert manifest.status_code == 200
+    version = manifest.json["release"]["version"]
+    assert client.get("/v1/updates/artifact/" + version, headers=headers).status_code == 200
+    assert client.get("/v1/updates/artifact/9999", headers=headers).status_code == 404
+    report = {"installed": version, "available": version, "state": "current", "message": ""}
+    assert client.post("/v1/updates/report", headers=headers, json=report).status_code == 200
+    assert client.post("/platform/updates/managed/" + device).status_code in (302, 403)
+    owner = owner_client(app)
+    assert owner.get("/platform/updates").status_code == 200
+    with owner.session_transaction() as state:
+        csrf = state["managed_updates_csrf"]
+    assert owner.post("/platform/updates/managed/" + device, data={"csrf": csrf}).status_code == 303
+    assert client.get("/v1/updates/manifest", headers=headers).json["request_id"]
+    with app.app_context():
+        p.platform_execute("delete from managed_till_updates where terminal_id=?", (device,))
