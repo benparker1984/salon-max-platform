@@ -97,6 +97,9 @@ def connection_details():
 def api(path, body=None, binary=False):
     base, headers = connection_details()
     data = None if body is None else json.dumps(body).encode()
+    headers["Cache-Control"] = "no-cache"
+    if body is None:
+        path += ("&" if "?" in path else "?") + "check=" + str(time.time_ns())
     with urlopen(Request(base + path, headers=headers, data=data), timeout=12) as response:
         raw = response.read(MAX_ARCHIVE + 1)
     if len(raw) > MAX_ARCHIVE:
